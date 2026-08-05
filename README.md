@@ -140,7 +140,8 @@ use the full width.
 
 The visual editor moves around the site with an explicit picker: clicking a link inside
 the canvas is ambiguous (is that a click, or an edit?). By default every argument-free
-GET route is offered. A site that knows its own sitemap passes a callable:
+GET route is offered. A site that knows its own sitemap — which product, which category
+— passes a callable:
 
 ```python
 def editor_pages():
@@ -149,6 +150,10 @@ def editor_pages():
         {"path": f"/producto/{first_product().id}", "label": "Producto"},
     ]
 ```
+
+This list is also what the canvas is allowed to START on: `?path=` only accepts a page
+that appears here, so an admin screen — or the editor itself — can never be loaded into
+the frame. Following a link *inside* the canvas still reaches the whole site.
 
 ### Text the site does not own
 

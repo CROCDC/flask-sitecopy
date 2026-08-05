@@ -2,7 +2,7 @@
 {% set sitecopy_screen = 'preview' %}
 {% block title %}Previsualizar {{ group.title }}{% if sitecopy_brand %} · {{ sitecopy_brand }}{% endif %}{% endblock %}
 
-{% block head %}<link rel="stylesheet" href="{{ url_for(sitecopy_bp ~ '.static', filename='css/sitecopy-admin.css') }}">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for(sitecopy_bp ~ '.static', filename='css/sitecopy-shell.css') }}"><link rel="stylesheet" href="{{ url_for(sitecopy_bp ~ '.static', filename='css/sitecopy-admin.css') }}">{% endblock %}
 
 {% block content %}
 <a class="adm-back" href="{{ url_for(sitecopy_bp ~ '.group_edit', group_key=group.key) }}">← Volver a editar</a>

@@ -3,7 +3,7 @@
 {% set full_bleed = true %}
 {% block title %}Editor visual{% if sitecopy_brand %} · {{ sitecopy_brand }}{% endif %}{% endblock %}
 
-{% block head %}<link rel="stylesheet" href="{{ url_for(sitecopy_bp ~ '.static', filename='css/sitecopy-admin.css') }}"><link rel="stylesheet" href="{{ url_for(sitecopy_bp ~ '.static', filename='css/sitecopy-editor.css') }}">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for(sitecopy_bp ~ '.static', filename='css/sitecopy-shell.css') }}"><link rel="stylesheet" href="{{ url_for(sitecopy_bp ~ '.static', filename='css/sitecopy-admin.css') }}"><link rel="stylesheet" href="{{ url_for(sitecopy_bp ~ '.static', filename='css/sitecopy-editor.css') }}">{% endblock %}
 
 {% block content %}
 <div class="ed" data-ed

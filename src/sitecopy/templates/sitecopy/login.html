@@ -2,7 +2,7 @@
 {% set sitecopy_screen = 'login' %}
 {% block title %}Entrar{% if sitecopy_brand %} · {{ sitecopy_brand }}{% endif %}{% endblock %}
 
-{% block head %}<link rel="stylesheet" href="{{ url_for(sitecopy_bp ~ '.static', filename='css/sitecopy-admin.css') }}">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for(sitecopy_bp ~ '.static', filename='css/sitecopy-shell.css') }}"><link rel="stylesheet" href="{{ url_for(sitecopy_bp ~ '.static', filename='css/sitecopy-admin.css') }}">{% endblock %}
 
 {% block content %}
 <div class="adm-login">

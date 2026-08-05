@@ -2,7 +2,7 @@
 {% set sitecopy_screen = 'group' %}
 {% block title %}{{ group.title }} · Textos{% if sitecopy_brand %} · {{ sitecopy_brand }}{% endif %}{% endblock %}
 
-{% block head %}<link rel="stylesheet" href="{{ url_for(sitecopy_bp ~ '.static', filename='css/sitecopy-admin.css') }}">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for(sitecopy_bp ~ '.static', filename='css/sitecopy-shell.css') }}"><link rel="stylesheet" href="{{ url_for(sitecopy_bp ~ '.static', filename='css/sitecopy-admin.css') }}">{% endblock %}
 
 {% block content %}
 <a class="adm-back" href="{{ url_for(sitecopy_bp ~ '.index') }}">← Todos los textos</a>

@@ -268,27 +268,18 @@ def _safe_start_path(raw: str | None) -> str:
     `?path=https://evil.test` embedded a foreign origin inside the admin chrome — one
     link to the site owner away from acting with her session.
     """
-    state = current_state()
     candidate = (raw or "").strip()
     if not candidate.startswith("/") or candidate.startswith(("//", "/\\")):
         return "/"
     path = candidate.split("?", 1)[0].split("#", 1)[0]
-    # The canvas is for the public site. The admin is not editable copy, and one of its
-    # screens is this very editor: `?path=/admin/content/` drew the editor inside
-    # itself, two toolbars and two Publicar buttons deep.
-    if path.rstrip("/").lower().startswith(state.url_prefix.rstrip("/").lower()):
-        return "/"
+    # Only a page the site itself offers. Anything else — an admin screen, another
+    # blueprint, this very editor (`?path=/admin/content/` drew it inside itself, two
+    # toolbars and two Publicar buttons deep) — falls back to the home page.
+    # Following a link INSIDE the canvas still reaches the whole site; this is only
+    # where the canvas starts.
     if any(page["path"] == path for page in editor_pages()):
         return path
-    # Anything else that resolves to a real GET route on this app is fine too.
-    from flask import current_app
-
-    adapter = current_app.url_map.bind("localhost")
-    try:
-        adapter.match(path, method="GET")
-    except Exception:  # noqa: BLE001 — unknown path, fall back to the home
-        return "/"
-    return path
+    return "/"
 
 
 def editor_pages() -> list[dict[str, str]]:
