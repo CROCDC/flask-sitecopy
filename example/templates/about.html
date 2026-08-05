@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t('about.title') }} · {{ t('global.brand') }}{% endblock %}
+
+{% block content %}
+<article class="prose">
+  <h1>{{ t('about.title') }}</h1>
+  {# A `rich` field: sanitized allow-list HTML, both on save and on render. #}
+  {{ t('about.body') }}
+</article>
+{% endblock %}

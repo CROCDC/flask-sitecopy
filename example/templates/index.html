@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t('home.meta.title') }}{% endblock %}
+{% block description %}{{ t('home.meta.description') }}{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-copy">
+    <h1>{{ t('home.hero.title') }}</h1>
+    <p class="lead">{{ t('home.hero.subtitle') }}</p>
+    <a class="button" href="/producto/mochila-cactus">{{ t('home.hero.cta') }}</a>
+  </div>
+  {# The alt text is invisible copy — clicking this image in the editor opens it in the
+     side panel. #}
+  <div class="hero-photo" role="img" aria-label="{{ t('home.hero.alt') }}">👜</div>
+</section>
+
+<section class="values">
+  <h2>{{ t('home.values.heading') }}</h2>
+  <ul class="value-list">
+    {% for item in t_lines('home.values.items') %}
+      <li>{{ item }}</li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section class="catalogue">
+  <h2>La colección</h2>
+  <div class="product-grid">
+    {% for slug, item in products.items() %}
+      {# .product-card is declared as external_content: its name/price come from the
+         catalogue, so a click in the editor says so instead of shrugging. #}
+      <a class="product-card" href="/producto/{{ slug }}">
+        <span class="product-emoji">{{ item.emoji }}</span>
+        <span class="product-name">{{ item.name }}</span>
+        <span class="product-price">{{ item.price }}</span>
+      </a>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

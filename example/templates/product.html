@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t('product.meta.title', name=item.name) }}{% endblock %}
+
+{% block content %}
+<article class="product">
+  {# .product-hero is external_content: the name and price are catalogue data, not
+     registry copy. The labels and shipping note below ARE editable. #}
+  <div class="product-hero">
+    <div class="product-photo">{{ item.emoji }}</div>
+    <div>
+      <h1>{{ item.name }}</h1>
+      <p class="price">{{ item.price }}</p>
+    </div>
+  </div>
+
+  <p class="shipping">{{ t('product.shipping') }}</p>
+  <button class="button">{{ t('product.cta') }}</button>
+
+  {# Serialized, not rendered: t_plain keeps the editor markers out of the JSON. #}
+  <script type="application/ld+json">{{ json_ld | safe }}</script>
+</article>
+{% endblock %}

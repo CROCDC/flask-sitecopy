@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {# Metadata rendered through t() like everything else — the editor's SERP/share
+     cards are built from these very tags, so there is no second copy to drift. #}
+  <title>{% block title %}{{ t('global.brand') }}{% endblock %}</title>
+  <meta name="description" content="{% block description %}{{ t('home.meta.description') }}{% endblock %}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='site.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">{{ t('global.brand') }}</a>
+    <nav>
+      <a href="/">Inicio</a>
+      <a href="/nosotros">Nosotros</a>
+      <a href="/producto/mochila-cactus">Tienda</a>
+    </nav>
+  </header>
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <p>{{ t('global.footer.note') }}</p>
+    <a href="{{ t('global.instagram') }}">{{ t('global.instagram_label') }}</a>
+  </footer>
+</body>
+</html>

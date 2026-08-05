@@ -26,6 +26,19 @@ That is the whole install. `/admin/content` now shows the site in a frame; click
 text on the page and type over it. Adding new copy later is one `TextField` plus one
 `t('<key>')` — no migration, no seed, no admin form to touch.
 
+## Try it
+
+A complete little site lives in [`example/`](example/). It touches every field type,
+tokens, `external_content` and the draft/publish flow:
+
+```bash
+pip install -e ".[test]"     # the library + Flask-SQLAlchemy
+python -m example.app        # http://127.0.0.1:5000
+```
+
+Open `/` for the public site and `/admin/content/` for the editor (password: `demo`).
+See [`example/README.md`](example/README.md) for what each part demonstrates.
+
 ---
 
 ## Why it is shaped like this
