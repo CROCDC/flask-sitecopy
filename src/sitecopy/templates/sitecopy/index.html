@@ -1,0 +1,62 @@
+{% extends sitecopy_base %}
+{% set sitecopy_screen = 'index' %}
+{% block title %}Textos{% if sitecopy_brand %} · {{ sitecopy_brand }}{% endif %}{% endblock %}
+
+{% block head %}<link rel="stylesheet" href="{{ url_for(sitecopy_bp ~ '.static', filename='css/sitecopy-admin.css') }}">{% endblock %}
+
+{% block content %}
+<div class="adm-list-head">
+    <h1>Textos de la web</h1>
+    <a href="{{ url_for(sitecopy_bp ~ '.editor') }}" class="btn btn-primary">✎ Editor visual</a>
+</div>
+
+<p class="ct-lead">
+    Elegí una sección para editar lo que dice la web. Los cambios se guardan como
+    borrador: los ves en la previsualización y recién aparecen en el sitio cuando
+    tocás <strong>Publicar</strong>.
+</p>
+
+{% if pending_total %}
+<div class="ct-pending-bar">
+    <p>
+        Tenés <strong>{{ pending_total }}</strong>
+        {{ 'texto sin publicar' if pending_total == 1 else 'textos sin publicar' }}.
+    </p>
+    <div class="ct-pending-actions">
+        {# The editor's own Publicar always confirms; this one is broader and did not,
+           which is exactly backwards. #}
+        <form method="post" action="{{ url_for(sitecopy_bp ~ '.publish_all') }}"
+              onsubmit="return confirm('{{ 'Se va a publicar 1 texto' if pending_total == 1 else 'Se van a publicar %d textos' % pending_total }} de todo el sitio.\n\n{{ 'Se ve' if pending_total == 1 else 'Se ven' }} en la web enseguida.');">
+            <button type="submit" class="btn btn-primary">Publicar todo el sitio</button>
+        </form>
+        <form method="post" action="{{ url_for(sitecopy_bp ~ '.discard_all') }}"
+              onsubmit="return confirm('¿Descartar todos los cambios sin publicar? No se puede deshacer.');">
+            <button type="submit" class="btn btn-ghost">Descartar</button>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+{% for category, groups in groups_by_category.items() %}
+<h2 class="ct-cat-title">{{ category }}</h2>
+<ul class="ct-grid">
+    {% for group in groups %}
+    {% set stat = stats[group.key] %}
+    <li class="ct-card">
+        <a href="{{ url_for(sitecopy_bp ~ '.group_edit', group_key=group.key) }}" class="ct-card-link">
+            <span class="ct-card-icon" aria-hidden="true">{{ group.icon }}</span>
+            <span class="ct-card-body">
+                <span class="ct-card-title">{{ group.title }}</span>
+                <span class="ct-card-desc">{{ group.description }}</span>
+                <span class="ct-card-meta">
+                    <span class="ct-count">{{ stat.total }} textos</span>
+                    {% if stat.pending %}<span class="adm-tag ct-tag-draft">{{ stat.pending }} sin publicar</span>{% endif %}
+                    {% if stat.overridden %}<span class="adm-tag ct-tag-edited">{{ stat.overridden }} {{ 'editado' if stat.overridden == 1 else 'editados' }}</span>{% endif %}
+                </span>
+            </span>
+        </a>
+    </li>
+    {% endfor %}
+</ul>
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,32 @@
+{% extends sitecopy_base %}
+{% set sitecopy_screen = 'login' %}
+{% block title %}Entrar{% if sitecopy_brand %} · {{ sitecopy_brand }}{% endif %}{% endblock %}
+
+{% block head %}<link rel="stylesheet" href="{{ url_for(sitecopy_bp ~ '.static', filename='css/sitecopy-admin.css') }}">{% endblock %}
+
+{% block content %}
+<div class="adm-login">
+    <h1>Textos de la web</h1>
+    <p>Entrá para editar lo que dice el sitio.</p>
+
+    {% if not configured %}
+    {# Saying "wrong password" to someone who cannot possibly get it right is a
+       support ticket. The panel is closed until the site sets one. #}
+    <div class="adm-flash adm-flash-error">
+        Todavía no hay contraseña configurada, así que no se puede entrar.
+        Definí <code>SITECOPY_PASSWORD</code> en la configuración de la app.
+    </div>
+    {% elif error %}
+    <div class="adm-flash adm-flash-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" class="adm-form">
+        <div class="adm-field">
+            <label for="password">Contraseña</label>
+            <input type="password" id="password" name="password" autocomplete="current-password"
+                   autofocus required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg btn-block">Entrar</button>
+    </form>
+</div>
+{% endblock %}

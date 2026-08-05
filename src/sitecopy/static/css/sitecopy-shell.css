@@ -1,0 +1,210 @@
+/* sitecopy — the admin shell: page frame, buttons, flashes, tags.
+
+   These are the primitives the screens are built from. A site that passes its own
+   `base_template` still gets this file (the screens link it themselves), so the
+   panel looks like itself wherever it is mounted. Everything is either prefixed
+   `adm-`/`ct-`/`ed-` or a plain `.btn`, and it only ever loads on these screens.
+
+   Colours come from the variables below: override them in your own stylesheet to
+   put the panel in your palette. */
+
+:root {
+    --adm-ink: #1a1714;
+    --adm-soft: #5a534b;
+    /* #8a8076 measures 3.87:1 on white — below the 4.5:1 floor for body text. */
+    --adm-faint: #6b635a;
+    --adm-paper: #f4efe9;
+    --adm-card: #ffffff;
+    --adm-line: rgba(26, 23, 20, 0.14);
+    --adm-accent: #b56a3a;
+    --adm-accent-dk: #9a5730;
+    --adm-ok: #2e7d52;
+    --adm-err: #c0392b;
+    --adm-radius: 12px;
+    --adm-header-h: 56px;
+    --adm-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.visually-hidden {
+    position: absolute; width: 1px; height: 1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+body.admin {
+    margin: 0;
+    background: var(--adm-paper);
+    color: var(--adm-ink);
+    font-family: var(--adm-sans);
+    font-size: 17px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    box-sizing: border-box;
+}
+body.admin *, body.admin *::before, body.admin *::after { box-sizing: inherit; }
+body.admin a { color: inherit; }
+body.admin img { display: block; max-width: 100%; }
+
+/* ---------- header ----------
+   A grid, not a flex row: the nav gets the middle and stays on ONE line at every
+   width. As a flex row it was the widest thing in the admin — 129px of horizontal
+   overflow at 195px, and a third line of header on a small phone. */
+.adm-header {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: clamp(0.5rem, 2vw, 1.2rem);
+    min-height: var(--adm-header-h);
+    padding: 0.5rem clamp(0.7rem, 3vw, 2rem);
+    background: var(--adm-ink);
+    color: #fff;
+    position: sticky;
+    top: 0;
+    z-index: 40;
+}
+.adm-brand {
+    display: inline-flex; align-items: baseline; gap: 0.5rem;
+    text-decoration: none; min-width: 0;
+}
+.adm-brand-mark { font-weight: 500; letter-spacing: 0.12em; font-size: 1.02rem; white-space: nowrap; }
+.adm-brand-tag {
+    font-size: 0.66rem; letter-spacing: 0.16em; text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.62);
+}
+.adm-header form { margin: 0; }
+
+.adm-sections {
+    display: flex; gap: 0.25rem; justify-self: center;
+    padding: 3px; border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+}
+.adm-section-link {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    /* 44px is the touch floor; it fits the bar exactly. */
+    min-height: 44px; padding: 0 0.85rem;
+    border-radius: 999px;
+    color: rgba(255, 255, 255, 0.78);
+    text-decoration: none; font-size: 0.92rem; white-space: nowrap;
+    transition: background 0.18s, color 0.18s;
+}
+.adm-section-link:hover { color: #fff; background: rgba(255, 255, 255, 0.1); }
+.adm-section-link.is-current {
+    color: var(--adm-ink);
+    background: #fff;
+    /* Not colour alone: the label goes medium so the current section survives a
+       greyscale screenshot or a colour-blind reader. */
+    font-weight: 500;
+}
+
+.adm-header-end { display: inline-flex; align-items: center; gap: 0.5rem; }
+.adm-pill,
+.adm-exit {
+    display: inline-flex; align-items: center; gap: 0.45rem;
+    min-height: 44px; min-width: 44px; padding: 0 0.7rem;
+    background: none; border: 1px solid rgba(255, 255, 255, 0.22); border-radius: 999px;
+    color: rgba(255, 255, 255, 0.82);
+    font-family: inherit; font-size: 0.88rem; cursor: pointer;
+    transition: border-color 0.18s, color 0.18s;
+}
+.adm-pill:hover,
+.adm-exit:hover { border-color: rgba(255, 255, 255, 0.55); color: #fff; }
+.adm-visit { text-decoration: none; }
+.adm-pill svg, .adm-exit svg { flex: none; }
+
+@media (max-width: 560px) {
+    /* The word "Salir" and the tag are what pushed the header onto a third line at
+       326px. The icon keeps its accessible name via aria-label. */
+    .adm-exit-text, .adm-brand-tag { display: none; }
+    .adm-pill,
+    .adm-exit { padding: 0; justify-content: center; width: 44px; min-height: 44px; }
+    .adm-section-link { padding: 0 0.6rem; font-size: 0.88rem; }
+}
+
+@media (max-width: 380px) {
+    .adm-visit { display: none; }
+    .adm-brand-mark { font-size: 0.92rem; letter-spacing: 0.08em; }
+}
+
+.adm-main {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: clamp(1rem, 4vw, 2rem) clamp(1rem, 4vw, 2rem) 5rem;
+}
+
+/* ---------- buttons ---------- */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-family: inherit;
+    font-size: 1rem;
+    font-weight: 400;
+    line-height: 1;
+    padding: 0.95rem 1.4rem;
+    border-radius: var(--adm-radius);
+    border: 1px solid transparent;
+    cursor: pointer;
+    text-decoration: none;
+    min-height: 50px;
+    transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.btn-primary { background: var(--adm-accent-dk); color: #fff; }
+.btn-primary:hover { background: #874c29; }
+.btn-ghost { background: transparent; border-color: var(--adm-line); color: var(--adm-ink); }
+.btn-ghost:hover { border-color: var(--adm-ink); }
+.btn-danger { background: transparent; border-color: rgba(192,57,43,0.4); color: var(--adm-err); }
+.btn-danger:hover { background: rgba(192,57,43,0.08); }
+.btn-block { width: 100%; }
+.btn-lg { font-size: 1.1rem; padding: 1.1rem 1.6rem; min-height: 58px; }
+
+/* ---------- flashes ---------- */
+.adm-flashes { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1.4rem; }
+.adm-flash {
+    padding: 0.9rem 1.1rem;
+    border-radius: var(--adm-radius);
+    font-size: 0.98rem;
+    border: 1px solid;
+}
+.adm-flash-success { background: rgba(46,125,82,0.1); border-color: rgba(46,125,82,0.35); color: var(--adm-ok); }
+.adm-flash-error { background: rgba(192,57,43,0.08); border-color: rgba(192,57,43,0.35); color: var(--adm-err); }
+.adm-flash-notice { background: rgba(181,106,58,0.1); border-color: rgba(181,106,58,0.4); color: #8a4f28; }
+
+/* ---------- page furniture ---------- */
+.adm-list-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    margin-bottom: 1.6rem; flex-wrap: wrap;
+}
+.adm-list-head h1 { font-size: 1.5rem; font-weight: 400; margin: 0; }
+.adm-tag { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 0.18rem 0.5rem; border-radius: 999px; }
+.adm-empty { text-align: center; color: var(--adm-soft); padding: 3rem 1rem; }
+.adm-empty p { margin-bottom: 1.2rem; }
+.adm-title { font-size: 1.5rem; font-weight: 400; margin: 0 0 1.4rem; }
+.adm-back { display: inline-block; margin-bottom: 1rem; color: var(--adm-soft); text-decoration: none; font-size: 0.95rem; }
+.adm-back:hover { color: var(--adm-ink); }
+
+/* ---------- forms ---------- */
+.adm-form { display: flex; flex-direction: column; gap: 1.4rem; }
+.adm-field { display: flex; flex-direction: column; gap: 0.45rem; }
+.adm-field label { font-size: 0.95rem; font-weight: 500; }
+.hint { font-size: 0.82rem; color: var(--adm-faint); font-weight: 400; }
+.adm-field input[type="text"],
+.adm-field input[type="password"],
+.adm-field textarea {
+    font-family: inherit; font-size: 1.05rem; color: var(--adm-ink);
+    background: var(--adm-card);
+    border: 1px solid var(--adm-line); border-radius: var(--adm-radius);
+    padding: 0.85rem 1rem; width: 100%;
+}
+.adm-field input:focus, .adm-field textarea:focus {
+    outline: 2px solid var(--adm-accent); outline-offset: 1px; border-color: var(--adm-accent);
+}
+
+/* ---------- login ---------- */
+.adm-login {
+    max-width: 380px;
+    margin: clamp(2rem, 12vh, 7rem) auto 0;
+    text-align: center;
+}
+.adm-login h1 { font-size: 1.5rem; font-weight: 400; margin: 0 0 0.4rem; }
+.adm-login p { color: var(--adm-soft); margin: 0 0 1.8rem; }
+.adm-login .adm-form { text-align: left; }
