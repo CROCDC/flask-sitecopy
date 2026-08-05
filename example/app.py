@@ -51,13 +51,17 @@ def editor_pages() -> list[dict[str, str]]:
     ]
 
 
-def create_app() -> Flask:
+def create_app(config: dict | None = None) -> Flask:
     app = Flask(__name__, instance_relative_config=True)
     app.config.update(
         SECRET_KEY="demo-not-a-secret",
         SQLALCHEMY_DATABASE_URI="sqlite:///sitecopy-demo.sqlite",
         SITECOPY_PASSWORD="demo",
     )
+    # Overrides applied BEFORE db.init_app binds the engine — a test that points this at
+    # its own database has to do so here, or it silently writes to the demo's file.
+    if config:
+        app.config.update(config)
     db.init_app(app)
 
     @app.route("/")

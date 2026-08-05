@@ -179,3 +179,15 @@ def test_ensure_schema_adds_a_column_an_older_database_is_missing() -> None:
             for row in store.db.session.execute(text("PRAGMA table_info(site_texts)")).fetchall()
         }
         assert "previous_value" in columns
+
+
+def test_get_returns_a_copy_not_the_stored_row(store) -> None:
+    """Mutating the result of get() must not rewrite the store's own state.
+
+    SQLAlchemyStore.get() builds a fresh TextRow; MemoryStore used to hand back its live
+    internal object, so the two stores disagreed the moment a caller wrote to the result.
+    """
+    store.set_published("a", "vivo")
+    got = store.get("a")
+    got.published_value = "MODIFICADO"
+    assert store.get("a").published_value == "vivo"

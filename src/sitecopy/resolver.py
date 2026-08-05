@@ -297,9 +297,16 @@ def t_plain(key: str, **params: Any) -> str | Markup:
 
 
 def t_lines(key: str, **params: Any) -> list[str]:
-    """A `lines` field as a list (blank lines dropped)."""
+    """A `lines` field as a list (blank lines dropped).
+
+    Split on ``\\n`` only — never ``str.splitlines()``, which also breaks on ``\\v``,
+    ``\\f``, U+2028 and friends. The save normalizer and the editor JS both split on
+    ``\\n``, so a value carrying one of those separators (pasted from a PDF or Word) would
+    otherwise render more bullets here than the editor ever showed, and the editor's
+    click-to-line mapping would point at the wrong bullet. One rule everywhere.
+    """
     value = t(key, **params)
-    return [line.strip() for line in str(value).splitlines() if line.strip()]
+    return [line.strip() for line in str(value).split("\n") if line.strip()]
 
 
 def t_optional(key: str, **params: Any) -> str | Markup | None:
@@ -405,7 +412,9 @@ def editable_lines(key: str, **params: Any) -> list[str] | list[Markup]:
     if not is_edit_mode() or key not in current_registry().fields:
         return t_lines(key, **params)
     wrapped: list[Markup] = []
-    for index, line in enumerate(str(t(key, **params)).splitlines()):
+    # split("\n"), matching t_lines and the editor JS — see the note there. Splitting
+    # differently here is what makes a click land on the wrong bullet.
+    for index, line in enumerate(str(t(key, **params)).split("\n")):
         text = line.strip()
         if text:
             wrapped.append(_wrap(key, text, line=index))

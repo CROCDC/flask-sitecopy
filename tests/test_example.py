@@ -17,13 +17,14 @@ from example.registry import build_registry  # noqa: E402
 
 
 @pytest.fixture
-def app():
-    app = example_app.create_app()
-    app.config.update(TESTING=True, SQLALCHEMY_DATABASE_URI="sqlite://")
-    with app.app_context():
-        example_app.db.drop_all()
-        example_app.db.create_all()
-        app.extensions["sitecopy"].store.ensure_schema()
+def app(tmp_path):
+    # Its own throwaway database, passed BEFORE create_app binds the engine — otherwise
+    # the demo's shared `db` stays bound to instance/sitecopy-demo.sqlite and the test
+    # publishes into the file you actually run the demo with.
+    db_path = tmp_path / "test.sqlite"
+    app = example_app.create_app(
+        {"TESTING": True, "SQLALCHEMY_DATABASE_URI": f"sqlite:///{db_path}"}
+    )
     return app
 
 

@@ -670,6 +670,11 @@
 
   window.addEventListener("message", (event) => {
     if (event.origin !== window.location.origin) return;
+    // The SENDER has to be the shell that framed us. Origin alone let any same-origin
+    // script (a sibling frame, an extension, a future widget) drive `set` — which for a
+    // rich key lands its markup in innerHTML here in edit mode. The shell already checks
+    // both sides this way; this closes the mirror-image gap on the frame side.
+    if (window.parent === window || event.source !== window.parent) return;
     const data = event.data || {};
     if (data.source !== "ct-shell") return;
     if (data.type === "flush") {

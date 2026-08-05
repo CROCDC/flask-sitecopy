@@ -18,7 +18,7 @@ anything that can answer these nine methods works, including an in-memory dict (
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
 
@@ -330,7 +330,12 @@ class MemoryStore(TextStore):
         return sorted(k for k, r in self._visible().items() if r.draft_value is not None)
 
     def get(self, key: str) -> TextRow | None:
-        return self._visible().get(key)
+        # A copy, never the stored object: SQLAlchemyStore.get() builds a fresh TextRow,
+        # so returning the live internal one here let a caller that mutated the result
+        # silently rewrite this store's state — a divergence the "both stores" test suite
+        # would not catch until it bit.
+        row = self._visible().get(key)
+        return replace(row) if row is not None else None
 
     def set_draft(self, key: str, value: str | None) -> None:
         rows = self._working()

@@ -149,6 +149,31 @@ def test_lines_come_back_as_a_list_without_the_blanks(app) -> None:
         assert t_lines("home.hero.bullets") == ["Uno", "Dos"]
 
 
+def test_lines_split_only_on_newline_not_on_exotic_separators(app) -> None:
+    """A U+2028/vertical-tab pasted from a PDF must NOT become an extra bullet.
+
+    t_lines used to use str.splitlines(), which breaks on those too — while the save
+    path and the editor JS split on "\\n" only. A value carrying one rendered more
+    bullets on the public page than the editor ever showed, and the editor's
+    click-to-line mapping then pointed at the wrong bullet.
+    """
+    # Stored directly, as a restored backup / manual UPDATE would (bypassing the save
+    # normalizer): the render path itself must not over-split. \u2028 is LINE SEPARATOR.
+    publish(app, "home.hero.bullets", "Uno\u2028Dos\nTres")
+    with app.test_request_context("/"):
+        assert t_lines("home.hero.bullets") == ["Uno\u2028Dos", "Tres"]
+
+
+def test_saving_a_lines_field_folds_exotic_separators_to_newline(app) -> None:
+    """The save path turns those separators into real bullets, consistently."""
+    from sitecopy.admin import _normalize
+    from sitecopy.registry import TextField
+
+    field = TextField("home.hero.bullets", "Lista", "x", type="lines")
+    # \u2028 LINE SEPARATOR and \x0b VERTICAL TAB both fold to "\n".
+    assert _normalize(field, "Uno\u2028Dos\x0bTres") == "Uno\nDos\nTres"
+
+
 def test_a_rich_value_comes_back_as_sanitized_markup(app) -> None:
     publish(app, "page.about.body", "<p>Hola</p><script>alert(1)</script>")
     with app.test_request_context("/"):

@@ -19,6 +19,7 @@ Screens:
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from flask import (
@@ -82,6 +83,11 @@ def _group_or_404(group_key: str) -> Group:
     return group
 
 
+# The line boundaries str.splitlines() breaks on beyond \n and \r: vertical tab, form
+# feed, FS/GS/RS, NEL, and the Unicode LINE/PARAGRAPH separators.
+_EXOTIC_NEWLINES = re.compile("[\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029]")
+
+
 def _normalize(field: TextField, raw: str) -> str:
     """Whitespace normalization shared by every field type.
 
@@ -92,6 +98,12 @@ def _normalize(field: TextField, raw: str) -> str:
     # second <ct-t> wrapper pointing at another key, and the private-use codepoints
     # shipped to public visitors as tofu.
     value = resolver.strip_edit_markers(raw).replace("\r\n", "\n").replace("\r", "\n")
+    # Every other Unicode line boundary str.splitlines() recognises (vertical tab, form
+    # feed, the file/group/record separators, NEL, LINE/PARAGRAPH SEPARATOR) folded to
+    # "\n" — the one separator the split rule, the editor JS and the render path agree
+    # on. A list pasted from a PDF or Word carries these; left alone they render as extra
+    # bullets the operator never authored and desync the editor's click-to-line mapping.
+    value = _EXOTIC_NEWLINES.sub("\n", value)
     if field.type in ("line", "url"):
         collapsed = " ".join(value.split())
         # Some fields are sentence fragments spliced into another string through a
