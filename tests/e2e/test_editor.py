@@ -166,6 +166,44 @@ def test_keyboard_can_reach_and_open_an_editable(editor):
     assert node.get_attribute("contenteditable") == "plaintext-only"
 
 
+def test_the_rich_sheet_sanitizes_a_malicious_paste(editor):
+    """A paste into the page-body editor runs through the client's sanitizeRich, in the
+    admin origin. A word-processor / crafted paste must not land a script or handler."""
+    editor.page.select_option("[data-ed-page]", "/nosotros")
+    editor.page.wait_for_timeout(1200)
+    editor.canvas.locator('ct-t[data-k="about.body"]').click()
+    editor.page.wait_for_timeout(400)
+    assert editor.page.locator("[data-ed-sheet]").is_visible()
+
+    # Focus the editable document and fire a paste carrying HTML, the way a clipboard
+    # would — the handler reads text/html, sanitizes it, and inserts the result.
+    cleaned = editor.page.evaluate(
+        """() => {
+            const doc = document.querySelector('[data-ed-sheet-doc]');
+            doc.focus();
+            const sel = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(doc);
+            range.collapse(false);
+            sel.removeAllRanges();
+            sel.addRange(range);
+            const dt = new DataTransfer();
+            dt.setData('text/html',
+                '<img src=x onerror="window.__xss=1"><script>window.__xss=1</script>' +
+                '<b onclick="window.__xss=1">negrita</b><a href="javascript:alert(1)">x</a>');
+            doc.dispatchEvent(new ClipboardEvent('paste',
+                {clipboardData: dt, bubbles: true, cancelable: true}));
+            return doc.innerHTML;
+        }"""
+    )
+    fired = editor.page.evaluate("() => Boolean(window.__xss)")
+    assert not fired, "an event handler ran in the admin origin"
+    assert "<script" not in cleaned.lower()
+    assert "onerror" not in cleaned.lower()
+    assert "onclick" not in cleaned.lower()
+    assert "javascript:" not in cleaned.lower()
+
+
 def test_no_console_errors_during_a_session(editor):
     """A catch-all: exercise the main gestures, then assert a clean console."""
     editor.type_over("home.hero.title", "Hola")

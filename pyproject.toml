@@ -35,6 +35,7 @@ test = [
 # The browser E2E suite (tests/e2e/), kept separate so the default run needs no browser.
 e2e = [
     "pytest-playwright>=0.4",
+    "axe-playwright-python>=0.1",  # bundles axe-core for the a11y checks (offline)
 ]
 
 [project.urls]

@@ -21,8 +21,18 @@ y por cada bug real dejar un test de regresión **antes** del fix.
   y validado end-to-end por la E2E (demo con CSRF encendido). Corpus de 19 payloads XSS
   conocidos contra el sanitizer. Doble-sanitización del manifest: un valor rich sucio ya no
   llega crudo al `innerHTML` del editor. `csrf.py` al 100%; cobertura 93.1% → **93.5%**.
-- ⏭️ **Siguiente:** Fase 4 (postMessage a nivel componente, a11y con axe, concurrencia
-  multi-worker) y Fase 5 (mutation testing).
+- ✅ **Fase 4 — front fino, a11y y concurrencia.** a11y con **axe-core** sobre login,
+  índice, grupo y editor — **encontró y se arregló** un bug real de contraste WCAG AA (el
+  botón "Editor visual" renderizaba ink oscuro sobre terracota, 3.2:1). Concurrencia
+  multi-worker: dos apps sobre una misma DB, el publish de una se ve en la otra al
+  siguiente request, y la caché por-request mantiene el snapshot dentro de un request.
+  `sanitizeRich` del cliente validada con un paste malicioso real (ningún handler corre en
+  el origen admin). i18n/encoding: emoji, RTL, combinantes y valores largos round-trip por
+  store, render y manifest.
+- ⏭️ **Siguiente:** Fase 5 (mutation testing con mutmut). Pendiente menor: los tests
+  component-level de postMessage necesitan un runner JS (jest/vitest) — hoy el chequeo de
+  `event.source` está cubierto por revisión de código y el path de seguridad real
+  (sanitizeRich) por la E2E.
 
 ## Estado actual (línea de base)
 

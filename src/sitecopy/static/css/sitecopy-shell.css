@@ -41,7 +41,11 @@ body.admin {
     box-sizing: border-box;
 }
 body.admin *, body.admin *::before, body.admin *::after { box-sizing: inherit; }
-body.admin a { color: inherit; }
+/* Neutralize the default link blue for prose links, but NOT for `.btn` anchors: this
+   rule (specificity 0,1,2) otherwise beat `.btn-primary` (0,1,0), so the "Editor visual"
+   link rendered dark ink on the terracotta button — 3.2:1, below WCAG AA. Each `.btn`
+   variant sets its own colour. */
+body.admin a:not(.btn) { color: inherit; }
 body.admin img { display: block; max-width: 100%; }
 
 /* ---------- header ----------
