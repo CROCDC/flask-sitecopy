@@ -219,3 +219,14 @@ body.admin img { display: block; max-width: 100%; }
 .adm-login h1 { font-size: 1.5rem; font-weight: 400; margin: 0 0 0.4rem; }
 .adm-login p { color: var(--adm-soft); margin: 0 0 1.8rem; }
 .adm-login .adm-form { text-align: left; }
+
+/* Respect a user who asked the OS for less motion: no transitions, no smooth scroll,
+   no animation across every admin screen. The JS scroll helpers check the same query. */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}

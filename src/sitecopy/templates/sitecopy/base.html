@@ -62,7 +62,9 @@
         {% if messages %}
         <div class="adm-flashes">
             {% for category, message in messages %}
-            <div class="adm-flash adm-flash-{{ category }}">{{ message }}</div>
+            {# An error is assertive (it blocked something); a success/notice is polite. #}
+            <div class="adm-flash adm-flash-{{ category }}"
+                 role="{{ 'alert' if category == 'error' else 'status' }}">{{ message }}</div>
             {% endfor %}
         </div>
         {% endif %}

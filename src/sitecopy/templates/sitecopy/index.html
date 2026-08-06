@@ -7,7 +7,7 @@
 {% block content %}
 <div class="adm-list-head">
     <h1>Textos de la web</h1>
-    <a href="{{ url_for(sitecopy_bp ~ '.editor') }}" class="btn btn-primary">✎ Editor visual</a>
+    <a href="{{ url_for(sitecopy_bp ~ '.editor') }}" class="btn btn-primary"><span aria-hidden="true">✎</span> Editor visual</a>
 </div>
 
 <p class="ct-lead">
@@ -60,5 +60,13 @@
     </li>
     {% endfor %}
 </ul>
+{% else %}
+<div class="ct-empty">
+    <p>Todavía no hay textos para editar.</p>
+    <p class="ct-empty-hint">
+        Aparecen acá en cuanto el sitio declara su primer <code>TextField</code> en el
+        registro.
+    </p>
+</div>
 {% endfor %}
 {% endblock %}

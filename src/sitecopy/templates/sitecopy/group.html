@@ -82,7 +82,7 @@
             {% endif %}
 
             <div class="ct-field-foot">
-                <span class="ct-counter" data-ct-counter data-max="{{ f.max_length }}"></span>
+                <span class="ct-counter" data-ct-counter data-max="{{ f.max_length }}" aria-live="polite"></span>
                 {% if st.value != f.default %}
                 {# No-JS safe: this submit posts the whole form and tells the server
                    which field to reset, so nothing typed elsewhere is lost. #}

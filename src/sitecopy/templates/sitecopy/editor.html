@@ -194,14 +194,18 @@
             </div>
 
             <div class="ed-sheet-body">
+                {# No role="textbox": the content is real rich structure (h2, ul, li),
+                   and role=textbox flattens it for assistive tech. A contenteditable
+                   already exposes an editable region; let the browser surface the real
+                   semantics. #}
                 <div class="ed-sheet-doc" data-ed-sheet-doc contenteditable="true"
-                     spellcheck="true" role="textbox" aria-multiline="true"
+                     spellcheck="true" aria-multiline="true"
                      aria-labelledby="edSheetTitle"></div>
             </div>
 
             <footer class="ed-sheet-foot">
                 <p class="ed-sheet-note" data-ed-sheet-note role="status" aria-live="polite" hidden></p>
-                <span class="ed-sheet-count" data-ed-sheet-count></span>
+                <span class="ed-sheet-count" data-ed-sheet-count aria-live="polite"></span>
                 <span class="ed-sheet-actions">
                     <button type="button" class="ed-btn ed-btn-ghost" data-ed-sheet-cancel>Cancelar</button>
                     <button type="button" class="ed-btn ed-btn-primary" data-ed-sheet-apply>Listo</button>

@@ -11,6 +11,12 @@
   const manifestNode = document.getElementById("ctManifest");
   if (!manifestNode) return;
 
+  // Honour the OS reduced-motion setting: jump instead of gliding.
+  const reduceMotion = window.matchMedia
+    ? window.matchMedia("(prefers-reduced-motion: reduce)")
+    : { matches: false };
+  const scrollBehavior = () => (reduceMotion.matches ? "auto" : "smooth");
+
   let MANIFEST;
   try {
     MANIFEST = JSON.parse(manifestNode.textContent || "{}");
@@ -712,7 +718,7 @@
       });
       const first = (data.keys || [])[0];
       const nodes = first ? document.querySelectorAll("ct-t[data-ct-invalid]") : [];
-      if (nodes.length) nodes[0].scrollIntoView({ block: "center", behavior: "smooth" });
+      if (nodes.length) nodes[0].scrollIntoView({ block: "center", behavior: scrollBehavior() });
     }
   });
 
