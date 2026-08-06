@@ -217,6 +217,19 @@ class SQLAlchemyStore(TextStore):
         for row in rows:
             if row.draft_value is None:
                 continue
+            live = (
+                row.published_value
+                if row.published_value is not None
+                else defaults.get(row.key)
+            )
+            if row.draft_value == live:
+                # A draft that matches what is already live: consume it, but nothing
+                # changed. Counting it inflated "Se publicó N texto"; rewriting
+                # previous_value here would also throw away the real previous wording.
+                row.draft_value = None
+                if row.is_empty:
+                    self._drop(row)
+                continue
             value: str | None = row.draft_value
             if value == defaults.get(row.key):
                 value = None
@@ -367,6 +380,18 @@ class MemoryStore(TextStore):
         for key in keys:
             row = rows.get(key)
             if row is None or row.draft_value is None:
+                continue
+            live = (
+                row.published_value
+                if row.published_value is not None
+                else defaults.get(key)
+            )
+            if row.draft_value == live:
+                # A draft equal to what is already live: consume it, count nothing, and
+                # keep the real previous_value. See the SQLAlchemy store for the why.
+                row.draft_value = None
+                if row.is_empty:
+                    del rows[key]
                 continue
             value: str | None = row.draft_value
             if value == defaults.get(key):

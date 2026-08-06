@@ -508,7 +508,11 @@ def override_count(group: Group) -> int:
 
 
 def register_jinja(app: Flask, registry: Registry) -> None:
-    """Expose the resolver to Jinja and harden preview responses."""
+    """Expose the resolver to Jinja.
+
+    Optional: a host that builds its own `t()` globals passes `jinja_globals=False`.
+    The response hardening below is NOT part of this — it must run either way.
+    """
 
     # Templates get the edit-aware variants: identical output on a normal request,
     # key-tagged inside the visual editor. `t_plain` is the escape hatch for values
@@ -520,6 +524,16 @@ def register_jinja(app: Flask, registry: Registry) -> None:
     app.jinja_env.globals.setdefault("t_optional", editable_optional)
     app.jinja_env.globals.setdefault("sitecopy_preview", is_preview)
 
+
+def harden_responses(app: Flask) -> None:
+    """Install the edit-marker rewrite and the preview/clickjacking headers.
+
+    NOT optional and NOT tied to `jinja_globals`: without the rewrite, `?edit=1` ships
+    private-use markers straight to the browser; without the header hook, a `?preview=1`
+    page renders unpublished drafts with no `noindex`/`no-store` (a CDN could cache and
+    serve a draft to the public) and every response loses its `X-Frame-Options`/CSP
+    frame guard.
+    """
     from sitecopy import editor_markup
 
     editor_markup.install(app)
