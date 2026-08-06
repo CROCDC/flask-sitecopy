@@ -32,9 +32,13 @@ A complete little site lives in [`example/`](example/). It touches every field t
 tokens, `external_content` and the draft/publish flow:
 
 ```bash
+python -m venv .venv && . .venv/bin/activate   # see the note below
 pip install -e ".[test]"     # the library + Flask-SQLAlchemy
 python -m example.app        # http://127.0.0.1:5000
 ```
+
+> On Debian/Ubuntu, a distro-packaged `blinker` makes a global `pip install` abort with
+> `Cannot uninstall blinker … RECORD file not found`. A virtualenv (above) sidesteps it.
 
 Open `/` for the public site and `/admin/content/` for the editor (password: `demo`).
 See [`example/README.md`](example/README.md) for what each part demonstrates.

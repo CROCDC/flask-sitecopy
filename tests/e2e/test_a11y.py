@@ -57,3 +57,12 @@ def test_a_group_form_is_accessible(editor, base_url):
     editor.page.goto(f"{base_url}/admin/content/home", wait_until="networkidle")
     v = _blocking(editor.page)
     assert not v, "a11y violations on a group form:\n" + _fmt(v)
+
+
+def test_the_preview_screen_is_accessible(editor, base_url):
+    """The share/device switcher used to be a tablist with no tabpanels; it is now a
+    role=group of aria-pressed buttons, so this screen must scan clean too."""
+    editor.page.goto(f"{base_url}/admin/content/home/preview", wait_until="networkidle")
+    editor.page.wait_for_timeout(300)
+    v = _blocking(editor.page)
+    assert not v, "a11y violations on the preview screen:\n" + _fmt(v)
