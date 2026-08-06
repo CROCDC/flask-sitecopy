@@ -110,7 +110,7 @@ def test_a_callable_preview_path_is_resolved_late() -> None:
 
 
 def test_a_sound_registry_reports_nothing(app) -> None:
-    from conftest import build_registry
+    from appfactory import build_registry
 
     assert check_registry(build_registry()) == []
 

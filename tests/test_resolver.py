@@ -8,7 +8,7 @@ from markupsafe import Markup
 from sitecopy import resolver, t, t_lines, t_optional
 from sitecopy.state import current_store
 
-from conftest import build_app
+from appfactory import build_app
 
 
 def publish(app, key: str, value: str) -> None:

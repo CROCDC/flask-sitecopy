@@ -24,9 +24,17 @@ dependencies = [
 
 [project.optional-dependencies]
 sqlalchemy = ["Flask-SQLAlchemy>=3.0"]
+# Unit + integration + property-based, plus coverage. This is what CI installs for the
+# default `pytest` run.
 test = [
     "Flask-SQLAlchemy>=3.0",
     "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "hypothesis>=6.0",
+]
+# The browser E2E suite (tests/e2e/), kept separate so the default run needs no browser.
+e2e = [
+    "pytest-playwright>=0.4",
 ]
 
 [project.urls]
@@ -38,4 +46,22 @@ packages = ["src/sitecopy"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The E2E suite needs a browser (installed only in CI's e2e job), so the default `pytest`
+# run — what a contributor gets locally — skips it by marker. Run it explicitly with
+# `pytest tests/e2e -m e2e` (the trailing -m overrides this default).
+addopts = '-m "not e2e"'
 filterwarnings = ["ignore::DeprecationWarning"]
+markers = [
+    "e2e: browser end-to-end test (needs Playwright + Chromium)",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["sitecopy"]
+
+[tool.coverage.report]
+# Branch coverage (stricter than line coverage) on the current baseline. This is a
+# ratchet: it only moves up. Each testing phase that lands raises it toward the ≥97%
+# target in docs/TESTING.md.
+fail_under = 91
+show_missing = true

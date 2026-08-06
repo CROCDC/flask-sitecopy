@@ -11,7 +11,7 @@ import pytest
 from sitecopy import MemoryStore
 from sitecopy.state import current_store
 
-from conftest import build_app
+from appfactory import build_app
 
 DEFAULTS = {"a": "por defecto", "b": "otro"}
 

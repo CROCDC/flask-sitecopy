@@ -126,7 +126,7 @@ def test_a_key_is_either_inline_or_hidden_never_both(client) -> None:
 
 
 def test_the_external_scope_reaches_the_page_when_the_site_declares_one() -> None:
-    from conftest import build_app
+    from appfactory import build_app
 
     app = build_app(
         external_content={"selector": ".product", "message": "Esto sale del catálogo."}

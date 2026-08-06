@@ -7,7 +7,7 @@ from flask import Flask, render_template_string
 
 from sitecopy import MemoryStore, SiteCopy
 
-from conftest import build_app, build_registry
+from appfactory import build_app, build_registry
 
 
 def test_a_registry_is_required() -> None:
