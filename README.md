@@ -140,6 +140,14 @@ one without the other raises.
 Pass neither and the bundled shared-password login is mounted at `<url_prefix>/login`,
 reading `SITECOPY_PASSWORD` from the app config.
 
+### CSRF
+
+Every state-changing panel request (save, publish, revert, discard, the group form, even
+login) carries a per-session token, sent in the `X-Sitecopy-CSRF` header by the editor or
+a hidden `_sitecopy_csrf` field by the no-JS forms. It is on by default. A host that
+already runs its own CSRF layer (Flask-WTF, say) can turn it off with `SITECOPY_CSRF =
+False` in the app config and rely on its own.
+
 ### Chrome
 
 The bundled `base_template` is self-contained. To put the screens inside an existing

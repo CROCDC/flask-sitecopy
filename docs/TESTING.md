@@ -16,8 +16,13 @@ y por cada bug real dejar un test de regresión **antes** del fix.
   normalización idempotente, round-trip, tokens, **fuzz del sanitizer** (Fase 3 adelantada)
   y una **máquina de estados que exige que `MemoryStore` y `SQLAlchemyStore` no diverjan** —
   la forma general del bug de `get()`. Cobertura de ramas 91.9% → **93.1%**.
-- ⏭️ **Siguiente:** completar Fase 3 (corpus XSS, CSRF, doble-sanitización del manifest) y
-  Fase 4 (postMessage/a11y/concurrencia).
+- ✅ **Fase 3 — seguridad ofensiva.** **CSRF cerrado**: token por sesión validado en toda
+  ruta mutante (header en el fetch del editor, campo oculto en los forms), con `test_csrf.py`
+  y validado end-to-end por la E2E (demo con CSRF encendido). Corpus de 19 payloads XSS
+  conocidos contra el sanitizer. Doble-sanitización del manifest: un valor rich sucio ya no
+  llega crudo al `innerHTML` del editor. `csrf.py` al 100%; cobertura 93.1% → **93.5%**.
+- ⏭️ **Siguiente:** Fase 4 (postMessage a nivel componente, a11y con axe, concurrencia
+  multi-worker) y Fase 5 (mutation testing).
 
 ## Estado actual (línea de base)
 

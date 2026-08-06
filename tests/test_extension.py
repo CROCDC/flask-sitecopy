@@ -157,7 +157,9 @@ def test_two_registries_can_live_on_one_app() -> None:
     from flask_sqlalchemy import SQLAlchemy
 
     app = Flask(__name__)
-    app.config.update(TESTING=True, SECRET_KEY="k", SQLALCHEMY_DATABASE_URI="sqlite://")
+    app.config.update(
+        TESTING=True, SECRET_KEY="k", SQLALCHEMY_DATABASE_URI="sqlite://", SITECOPY_CSRF=False
+    )
     db = SQLAlchemy()
     db.init_app(app)
 

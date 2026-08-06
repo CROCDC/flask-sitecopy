@@ -101,7 +101,12 @@ ABOUT_TEMPLATE = """<!doctype html>
 def build_app(**options):
     """A Flask app with the library installed. `options` go straight to init_app."""
     app = Flask(__name__)
-    app.config.update(TESTING=True, SECRET_KEY="test", SITECOPY_PASSWORD="secreto")
+    # CSRF off by default here: these tests drive the endpoints directly, not through the
+    # rendered forms, so they would otherwise all need a token. test_csrf.py turns it back
+    # on to exercise the guard, and the E2E suite runs against the demo with it ON.
+    app.config.update(
+        TESTING=True, SECRET_KEY="test", SITECOPY_PASSWORD="secreto", SITECOPY_CSRF=False
+    )
 
     store = options.pop("store", None)
     db = None

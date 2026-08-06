@@ -23,7 +23,13 @@ def app(tmp_path):
     # publishes into the file you actually run the demo with.
     db_path = tmp_path / "test.sqlite"
     app = example_app.create_app(
-        {"TESTING": True, "SQLALCHEMY_DATABASE_URI": f"sqlite:///{db_path}"}
+        {
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": f"sqlite:///{db_path}",
+            # These drive the endpoints via the test client, not the rendered forms; the
+            # CSRF guard itself is covered in test_csrf.py and end-to-end by the E2E suite.
+            "SITECOPY_CSRF": False,
+        }
     )
     return app
 

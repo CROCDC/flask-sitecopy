@@ -163,3 +163,51 @@ def test_real_markup_is_still_unwrapped_not_printed() -> None:
 def test_sanitize_stays_idempotent_with_the_rescued_text() -> None:
     once = sanitize("<p>a <de lunes a viernes> b</p>")
     assert sanitize(once) == once
+
+
+# --- a corpus of known-in-the-wild XSS payloads --------------------------------
+
+# Each of these has worked as stored/reflected XSS somewhere. After sanitizing, none may
+# leave an executable tag, an event handler, or a javascript: URL behind.
+XSS_CORPUS = [
+    '<script>alert(1)</script>',
+    '<img src=x onerror=alert(1)>',
+    '<svg/onload=alert(1)>',
+    '<a href="javascript:alert(1)">x</a>',
+    '<a href="jAvAsCrIpT:alert(1)">x</a>',
+    '<a href="  javascript:alert(1)">x</a>',
+    '<iframe src="javascript:alert(1)"></iframe>',
+    '<body onload=alert(1)>',
+    '<div style="background:url(javascript:alert(1))">x</div>',
+    '<p onmouseover="alert(1)">x</p>',
+    '<a href="data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==">x</a>',
+    '<math><mtext><script>alert(1)</script></mtext></math>',
+    '<object data="javascript:alert(1)"></object>',
+    '<a href="vbscript:msgbox(1)">x</a>',
+    '<input autofocus onfocus=alert(1)>',
+    '<details open ontoggle=alert(1)>',
+    '<style>@import"http://evil";</style>',
+    '<a href="java\tscript:alert(1)">x</a>',
+    '<noscript><p title="</noscript><img src=x onerror=alert(1)>">',
+]
+
+_BAD_TAG = __import__("re").compile(
+    r"<\s*(script|style|iframe|object|embed|svg|math|template|noscript|body|input|details)\b",
+    __import__("re").I,
+)
+_HANDLER = __import__("re").compile(r"\son\w+\s*=", __import__("re").I)
+_BAD_SCHEME = __import__("re").compile(r"(javascript|vbscript|data)\s*:", __import__("re").I)
+
+
+@pytest.mark.parametrize("payload", XSS_CORPUS)
+def test_no_known_payload_survives_sanitizing(payload) -> None:
+    out = sanitize(payload)
+    assert not _BAD_TAG.search(out), out
+    assert not _HANDLER.search(out), out
+    assert not _BAD_SCHEME.search(out), out
+
+
+@pytest.mark.parametrize("payload", XSS_CORPUS)
+def test_sanitizing_is_idempotent_on_every_payload(payload) -> None:
+    once = sanitize(payload)
+    assert sanitize(once) == once

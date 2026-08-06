@@ -27,6 +27,7 @@ from flask import (
     Response,
     abort,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -34,6 +35,7 @@ from flask import (
 )
 
 from sitecopy import auth as bundled_auth
+from sitecopy import csrf
 from sitecopy import resolver
 from sitecopy.editor_markup import field_payload
 from sitecopy.registry import Group, TextField
@@ -385,6 +387,7 @@ def _render(template: str, **context: Any) -> str:
         sitecopy_site_url=state.site_url,
         sitecopy_nav=state.nav,
         sitecopy_owns_auth=state.owns_auth,
+        sitecopy_csrf=csrf.token(),
         **context,
     )
 
@@ -404,6 +407,29 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
         static_folder="static",
     )
     login_required = state.login_required
+
+    @bp.before_request
+    def _guard_csrf() -> Any:
+        """Reject a state-changing request that does not carry the session's CSRF token.
+
+        Safe methods pass. The token reaches us in a header (the editor's fetch) or a
+        hidden field (the no-JS forms), both rendered from the session — a cross-site
+        caller can force the request but cannot read the token to include it.
+        """
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return None
+        if not csrf.enabled() or csrf.valid():
+            return None
+        if bundled_auth.wants_json():
+            return (
+                jsonify(
+                    ok=False,
+                    reason="csrf",
+                    errors=["No pudimos verificar la sesión. Recargá el editor y probá de nuevo."],
+                ),
+                400,
+            )
+        abort(400)
 
     @bp.route("/")
     @login_required

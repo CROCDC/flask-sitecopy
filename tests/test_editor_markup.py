@@ -103,6 +103,23 @@ def test_the_manifest_carries_the_raw_value_with_its_tokens_intact(client) -> No
     assert fields["home.hero.title"]["raw"] == "Bienvenido a {brand}"
 
 
+def test_the_manifest_sanitizes_a_dirty_rich_value(app, client) -> None:
+    """A rich value the editor loads goes into innerHTML in the canvas. One that reached
+    the table some other way (a restored backup, a manual UPDATE) must be sanitized here
+    too — the public render already is."""
+    with app.app_context():
+        current_store().set_published(
+            "page.about.body", '<p onclick="x()">Hola</p><script>alert(1)</script>'
+        )
+        resolver.save()
+    login(client)
+    fields = manifest_of(client.get("/nosotros?edit=1").get_data(as_text=True))["fields"]
+    body = fields["page.about.body"]
+    assert "<script" not in body["raw"]
+    assert "onclick" not in body["raw"]
+    assert body["raw"] == "<p>Hola</p>"
+
+
 def test_the_manifest_always_lists_the_token_fields(client) -> None:
     """They affect every page, even one that renders none of them directly."""
     login(client)

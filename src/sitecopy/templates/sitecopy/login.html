@@ -21,6 +21,7 @@
     {% endif %}
 
     <form method="post" class="adm-form">
+        <input type="hidden" name="_sitecopy_csrf" value="{{ sitecopy_csrf }}">
         <div class="adm-field">
             <label for="password">Contraseña</label>
             <input type="password" id="password" name="password" autocomplete="current-password"
