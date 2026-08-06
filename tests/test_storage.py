@@ -104,6 +104,25 @@ def test_publishing_counts_only_what_actually_changed(store) -> None:
     assert store.publish(["a", "b"], DEFAULTS) == 0
 
 
+def test_publishing_a_draft_equal_to_the_default_counts_nothing(store) -> None:
+    """A draft equal to the registry default on a never-published key leaves the live
+    site showing the default before and after: the counter must report 0, not a phantom
+    change (it surfaces to the operator as "Se publicó N texto")."""
+    store.set_draft("a", DEFAULTS["a"])
+    assert store.publish(["a"], DEFAULTS) == 0
+    # The no-op draft is consumed, not left pending.
+    assert store.draft_keys() == []
+
+
+def test_publishing_a_draft_equal_to_the_current_published_counts_nothing(store) -> None:
+    """And it must not rewrite previous_value to the same value it already had."""
+    store.set_published("a", "vivo")
+    store.set_draft("a", "vivo")
+    assert store.publish(["a"], DEFAULTS) == 0
+    assert store.draft_keys() == []
+    assert "a" not in store.previous_map()
+
+
 # --- discard -------------------------------------------------------------------
 
 
@@ -129,17 +148,12 @@ def test_discarding_a_key_with_no_row_is_a_no_op(store) -> None:
     assert store.discard_drafts(["a"]) == 0
 
 
-def test_delete_reports_whether_a_row_existed() -> None:
-    """SQLAlchemyStore.delete: True when it removed a row, False when there was none."""
-    from sitecopy.state import current_store
-
-    app = build_app()
-    with app.app_context():
-        store = current_store()
-        store.set_published("a", "x")
-        store.commit()
-        assert store.delete("a") is True
-        assert store.delete("never_set") is False
+def test_delete_reports_whether_a_row_existed(store) -> None:
+    """delete: True when it removed a row, False when there was none — on both stores."""
+    store.set_published("a", "x")
+    store.commit()
+    assert store.delete("a") is True
+    assert store.delete("never_set") is False
 
 
 # --- transactions --------------------------------------------------------------

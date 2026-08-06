@@ -15,10 +15,17 @@
     --adm-faint: #6b635a;
     --adm-paper: #f4efe9;
     --adm-card: #ffffff;
+    /* Hairline for decorative separators and card edges (no contrast floor applies). */
     --adm-line: rgba(26, 23, 20, 0.14);
+    /* Form-control boundary. A control needs 3:1 (WCAG 1.4.11) and the input fill
+       matches its container, so the border is the only at-rest cue: 0.5 alpha
+       composites to ~3.3:1 on both white and paper. Used ONLY on inputs/textareas. */
+    --adm-input-line: rgba(26, 23, 20, 0.5);
     --adm-accent: #b56a3a;
     --adm-accent-dk: #9a5730;
-    --adm-ok: #2e7d52;
+    /* #2e7d52 measured 4.06:1 as text on its own 0.1 success tint — under 4.5:1.
+       #256b45 clears it (5.6:1) for the flash and the "editado" tag. */
+    --adm-ok: #256b45;
     --adm-err: #c0392b;
     --adm-radius: 12px;
     --adm-header-h: 56px;
@@ -196,7 +203,7 @@ body.admin img { display: block; max-width: 100%; }
 .adm-field textarea {
     font-family: inherit; font-size: 1.05rem; color: var(--adm-ink);
     background: var(--adm-card);
-    border: 1px solid var(--adm-line); border-radius: var(--adm-radius);
+    border: 1px solid var(--adm-input-line); border-radius: var(--adm-radius);
     padding: 0.85rem 1rem; width: 100%;
 }
 .adm-field input:focus, .adm-field textarea:focus {
@@ -212,3 +219,14 @@ body.admin img { display: block; max-width: 100%; }
 .adm-login h1 { font-size: 1.5rem; font-weight: 400; margin: 0 0 0.4rem; }
 .adm-login p { color: var(--adm-soft); margin: 0 0 1.8rem; }
 .adm-login .adm-form { text-align: left; }
+
+/* Respect a user who asked the OS for less motion: no transitions, no smooth scroll,
+   no animation across every admin screen. The JS scroll helpers check the same query. */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}

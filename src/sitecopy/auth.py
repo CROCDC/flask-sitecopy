@@ -7,6 +7,11 @@ has an admin hands its own decorator and its own "is this an admin?" predicate t
 It is deliberately the smallest thing that works: one password for the whole panel,
 because the alternative — accounts, roles, a reset flow — is a product, not a
 dependency. If a site needs more, it already has more.
+
+No rate limiting lives here on purpose: a single shared secret with no throttling is
+brute-forceable, so a public deployment of the bundled login should sit behind an
+external limiter (a reverse proxy rule, Flask-Limiter, the platform's WAF). A site that
+needs accounts and lockouts passes its own `login_required` instead.
 """
 
 from __future__ import annotations
@@ -44,6 +49,10 @@ def check_password(password: str) -> bool:
 
 
 def login() -> None:
+    # Rotate the session on authentication: drop whatever a pre-login session carried
+    # before marking this one as an admin. Flask's signed cookies already make fixation
+    # hard (an attacker can't set the victim's cookie), so this is defence in depth.
+    session.clear()
     session[SESSION_KEY] = True
 
 

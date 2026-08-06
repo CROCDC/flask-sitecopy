@@ -54,7 +54,14 @@
                     {% elif st.is_overridden %}<span class="adm-tag ct-tag-edited">editado</span>{% endif %}
                 </span>
             </div>
-            {% if f.hint %}<p class="hint">{{ f.hint }}</p>{% endif %}
+            {# Tie the hint and (when rejected) the error to the control, so a screen
+               reader hears them with the field instead of just seeing a red border. #}
+            {% set desc_ids = [] %}
+            {% if f.hint %}{% set _ = desc_ids.append('hint-' ~ f.key) %}{% endif %}
+            {% if invalid %}{% set _ = desc_ids.append('err-' ~ f.key) %}{% endif %}
+            {% set describedby = desc_ids | join(' ') %}
+            {% if f.hint %}<p class="hint" id="hint-{{ f.key }}">{{ f.hint }}</p>{% endif %}
+            {% if invalid %}<p class="ct-error" id="err-{{ f.key }}">{{ field_errors.get(f.key, 'Revisá este texto.') }}</p>{% endif %}
 
             <input type="hidden" name="{{ baseline_prefix }}{{ f.key }}" value="{{ st.value }}">
             {% if f.is_multiline %}
@@ -63,17 +70,19 @@
                       maxlength="{{ f.max_length }}"
                       data-ct-input
                       {% if invalid %}aria-invalid="true"{% endif %}
+                      {% if describedby %}aria-describedby="{{ describedby }}"{% endif %}
                       class="ct-input ct-input-{{ f.type }}">{{ st.value }}</textarea>
             {% else %}
             <input type="{{ 'url' if f.type == 'url' else 'text' }}"
                    id="fld-{{ loop.index0 }}-{{ sec.key }}" name="{{ f.key }}"
                    value="{{ st.value }}" maxlength="{{ f.max_length }}"
                    {% if invalid %}aria-invalid="true"{% endif %}
+                   {% if describedby %}aria-describedby="{{ describedby }}"{% endif %}
                    data-ct-input class="ct-input">
             {% endif %}
 
             <div class="ct-field-foot">
-                <span class="ct-counter" data-ct-counter data-max="{{ f.max_length }}"></span>
+                <span class="ct-counter" data-ct-counter data-max="{{ f.max_length }}" aria-live="polite"></span>
                 {% if st.value != f.default %}
                 {# No-JS safe: this submit posts the whole form and tells the server
                    which field to reset, so nothing typed elsewhere is lost. #}

@@ -238,6 +238,24 @@ def _missing(key: str) -> str:
     return ""
 
 
+def _tokens_for(params: dict[str, Any]) -> dict[str, str]:
+    """The global tokens, plus any per-call params as tokens.
+
+    A param is data: strip any edit markers it carries (a template passing an
+    already-editable value through), because nesting them would corrupt the markup the
+    response hook produces.
+    """
+    tokens = dict(_global_tokens())
+    if params:
+        tokens.update(
+            {
+                name: _strip_markers("" if value is None else str(value))
+                for name, value in params.items()
+            }
+        )
+    return tokens
+
+
 def t(key: str, **params: Any) -> str | Markup:
     """The text for `key`, ready to render.
 
@@ -249,17 +267,7 @@ def t(key: str, **params: Any) -> str | Markup:
     field = registry.fields.get(key)
     if field is None:
         return _missing(key)
-    tokens = dict(_global_tokens())
-    if params:
-        # A param is data. Strip any edit markers it carries (a template passing an
-        # already-editable value through), because nesting them would corrupt the
-        # markup the response hook produces.
-        tokens.update(
-            {
-                name: _strip_markers("" if value is None else str(value))
-                for name, value in params.items()
-            }
-        )
+    tokens = _tokens_for(params)
     if field.type == "rich":
         # Escape each token BEFORE splicing. Interpolating first and sanitizing after
         # made the token's value part of the markup: the sanitizer bounded it to the
@@ -296,17 +304,24 @@ def t_plain(key: str, **params: Any) -> str | Markup:
     return t(key, **params)
 
 
-def t_lines(key: str, **params: Any) -> list[str]:
-    """A `lines` field as a list (blank lines dropped).
+def _raw_lines(key: str, **params: Any) -> list[str]:
+    """The lines of a `lines` value: split the RAW value on ``\\n``, THEN interpolate.
 
-    Split on ``\\n`` only — never ``str.splitlines()``, which also breaks on ``\\v``,
-    ``\\f``, U+2028 and friends. The save normalizer and the editor JS both split on
-    ``\\n``, so a value carrying one of those separators (pasted from a PDF or Word) would
-    otherwise render more bullets here than the editor ever showed, and the editor's
-    click-to-line mapping would point at the wrong bullet. One rule everywhere.
+    Two rules in one. Split on ``\\n`` only — never ``str.splitlines()``, which also
+    breaks on ``\\v``, ``\\f``, U+2028 and friends; the save normalizer and the editor JS
+    both split on ``\\n``, so a stray separator (pasted from a PDF or Word) must not spawn
+    a bullet nobody else sees. And split BEFORE interpolating, so a token whose value
+    contains a newline stays inside its own line instead of splitting into extra bullets —
+    the editor's ``#index`` addresses the raw value the manifest carries, and it must not
+    drift from what renders. Blanks are kept here; callers drop them where they should.
     """
-    value = t(key, **params)
-    return [line.strip() for line in str(value).split("\n") if line.strip()]
+    tokens = _tokens_for(params)
+    return [_interpolate(line, tokens) for line in str(effective(key)).split("\n")]
+
+
+def t_lines(key: str, **params: Any) -> list[str]:
+    """A `lines` field as a list (blank lines dropped)."""
+    return [line.strip() for line in _raw_lines(key, **params) if line.strip()]
 
 
 def t_optional(key: str, **params: Any) -> str | Markup | None:
@@ -412,9 +427,10 @@ def editable_lines(key: str, **params: Any) -> list[str] | list[Markup]:
     if not is_edit_mode() or key not in current_registry().fields:
         return t_lines(key, **params)
     wrapped: list[Markup] = []
-    # split("\n"), matching t_lines and the editor JS — see the note there. Splitting
-    # differently here is what makes a click land on the wrong bullet.
-    for index, line in enumerate(str(t(key, **params)).split("\n")):
+    # `_raw_lines` numbers by the RAW value (split before interpolation), exactly as the
+    # editor JS does — see the note there. Numbering the interpolated value instead is
+    # what made a click land on the wrong bullet when a token expanded to a newline.
+    for index, line in enumerate(_raw_lines(key, **params)):
         text = line.strip()
         if text:
             wrapped.append(_wrap(key, text, line=index))
@@ -477,10 +493,16 @@ def group_states(group: Group) -> dict[str, dict[str, Any]]:
 
 
 def pending_draft_count(group: Group | None = None) -> int:
-    registry = current_registry()
-    keys = [f.key for f in group.fields] if group is not None else list(registry.fields)
+    # Site-wide, count every pending draft — including one orphaned by a renamed or
+    # removed key. Counting only registry.fields hid such a draft from the index, so it
+    # was never shown, never publishable and never discardable: stuck forever. The
+    # site-wide publish/discard now act on the same full set, so this stays honest.
+    if group is None:
+        return len(current_store().draft_keys())
     overrides = _overrides()
-    return sum(1 for key in keys if overrides.get(key, (None, None))[1] is not None)
+    return sum(
+        1 for f in group.fields if overrides.get(f.key, (None, None))[1] is not None
+    )
 
 
 def override_count(group: Group) -> int:
@@ -492,7 +514,11 @@ def override_count(group: Group) -> int:
 
 
 def register_jinja(app: Flask, registry: Registry) -> None:
-    """Expose the resolver to Jinja and harden preview responses."""
+    """Expose the resolver to Jinja.
+
+    Optional: a host that builds its own `t()` globals passes `jinja_globals=False`.
+    The response hardening below is NOT part of this — it must run either way.
+    """
 
     # Templates get the edit-aware variants: identical output on a normal request,
     # key-tagged inside the visual editor. `t_plain` is the escape hatch for values
@@ -504,6 +530,16 @@ def register_jinja(app: Flask, registry: Registry) -> None:
     app.jinja_env.globals.setdefault("t_optional", editable_optional)
     app.jinja_env.globals.setdefault("sitecopy_preview", is_preview)
 
+
+def harden_responses(app: Flask) -> None:
+    """Install the edit-marker rewrite and the preview/clickjacking headers.
+
+    NOT optional and NOT tied to `jinja_globals`: without the rewrite, `?edit=1` ships
+    private-use markers straight to the browser; without the header hook, a `?preview=1`
+    page renders unpublished drafts with no `noindex`/`no-store` (a CDN could cache and
+    serve a draft to the public) and every response loses its `X-Frame-Options`/CSP
+    frame guard.
+    """
     from sitecopy import editor_markup
 
     editor_markup.install(app)

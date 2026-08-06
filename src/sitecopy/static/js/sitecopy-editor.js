@@ -9,6 +9,12 @@
   const root = document.querySelector("[data-ed]");
   if (!root) return;
 
+  // A user who asked the OS for less motion gets an instant jump, not a smooth glide.
+  const reduceMotion = window.matchMedia
+    ? window.matchMedia("(prefers-reduced-motion: reduce)")
+    : { matches: false };
+  const scrollBehavior = () => (reduceMotion.matches ? "auto" : "smooth");
+
   const iframe = root.querySelector("[data-ed-iframe]");
   const stage = root.querySelector("[data-ed-stage]");
   const frame = root.querySelector("[data-ed-frame]");
@@ -132,7 +138,7 @@
       });
       if (noResults) noResults.hidden = true;
       const first = root.querySelector("[data-ed-fields] .ed-field:not([hidden])");
-      if (first) first.scrollIntoView({ block: "center", behavior: "smooth" });
+      if (first) first.scrollIntoView({ block: "center", behavior: scrollBehavior() });
     });
   }
 
@@ -264,7 +270,7 @@
     // page: the toggle looked dead because nothing on screen changed. And leaving
     // focus on the toggle meant tabbing past the whole site to reach the panel.
     window.setTimeout(() => {
-      panel.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      panel.scrollIntoView({ block: "nearest", behavior: scrollBehavior() });
       if (takeFocus === false) return;
       const first = panel.querySelector("[data-ed-tab], input, textarea, button");
       if (first) first.focus();
@@ -380,6 +386,7 @@
     foot.className = "ed-field-foot";
     const count = document.createElement("span");
     count.className = "ed-field-count";
+    count.setAttribute("aria-live", "polite");
     // Undoing one bad edit used to mean Descartar, which throws away every other change
     // too. It targets what the SHOP currently shows — not what the editor loaded, which
     // IS the bad draft once it has been saved, and not the factory text, which is a
@@ -848,6 +855,27 @@
     );
   }
 
+  // Reflect the caret's current formatting on the toolbar, so a keyboard or
+  // screen-reader user can tell what is already applied (bold, a list, a heading).
+  function syncToolbar() {
+    root.querySelectorAll("[data-ed-cmd]").forEach((btn) => {
+      const cmd = btn.dataset.edCmd;
+      let pressed = null;
+      try {
+        if (cmd === "bold" || cmd === "italic" || cmd === "insertUnorderedList") {
+          pressed = document.queryCommandState(cmd);
+        } else if (cmd === "formatBlock") {
+          const arg = (btn.dataset.edArg || "").replace(/[<>]/g, "").toLowerCase();
+          pressed = (document.queryCommandValue("formatBlock") || "").toLowerCase() === arg;
+        }
+      } catch (_) {
+        pressed = null;
+      }
+      if (pressed === null) btn.removeAttribute("aria-pressed");
+      else btn.setAttribute("aria-pressed", pressed ? "true" : "false");
+    });
+  }
+
   function openSheet(key, value) {
     const field = fieldFor(key);
     if (!field) return;
@@ -876,6 +904,7 @@
     }
     renderSheetCount();
     sheetDoc.focus();
+    syncToolbar();
   }
 
   function closeSheet(applied) {
@@ -984,7 +1013,12 @@
           document.execCommand(cmd, false, btn.dataset.edArg || null);
         }
         renderSheetCount();
+        syncToolbar();
       });
+    });
+    // Keep the toolbar in step as the caret moves through already-formatted text.
+    document.addEventListener("selectionchange", () => {
+      if (!sheet.hidden) syncToolbar();
     });
     // A dialog that declares aria-modal="true" has to behave like one: focus stays
     // inside until it closes, or a keyboard user tabs straight out into a page that

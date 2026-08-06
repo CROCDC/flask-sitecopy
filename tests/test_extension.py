@@ -195,6 +195,49 @@ def test_the_jinja_globals_can_be_left_alone_for_a_site_that_names_them_itself()
     assert client.get("/admin/content/list").status_code == 200
 
 
+def test_preview_hardening_runs_even_without_the_jinja_globals() -> None:
+    """A host that names its own `t()` (jinja_globals=False) still gets the preview
+    headers: a `?preview=1` page renders unpublished drafts, so it must carry
+    noindex/no-store, and every response keeps its clickjacking frame guard. These used
+    to be skipped along with the globals, leaking drafts to any CDN in front of preview."""
+    from sitecopy import resolver
+
+    app = build_app(jinja_globals=False)
+    # The site names the resolver under its own globals (what jinja_globals=False is for).
+    app.jinja_env.globals["t"] = resolver.editable
+    app.jinja_env.globals["t_lines"] = resolver.editable_lines
+
+    @app.route("/page")
+    def page() -> str:
+        return render_template_string("<h1>{{ t('home.hero.title') }}</h1>")
+
+    client = app.test_client()
+    client.post("/admin/content/login", data={"password": "secreto"})
+
+    preview = client.get("/page?preview=1")
+    assert preview.headers.get("X-Robots-Tag") == "noindex, nofollow"
+    assert preview.headers.get("Cache-Control") == "no-store, private"
+
+    normal = client.get("/page")
+    assert normal.headers.get("X-Frame-Options") == "SAMEORIGIN"
+    assert normal.headers.get("Content-Security-Policy") == "frame-ancestors 'self'"
+
+
+def test_the_bundled_login_rotates_the_session() -> None:
+    """Anything a pre-login session carried is dropped on authentication (defence in
+    depth against session fixation), and the admin flag is set on the fresh session."""
+    from sitecopy import auth
+
+    app = build_app()
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["planted"] = "x"
+    client.post("/admin/content/login", data={"password": "secreto"})
+    with client.session_transaction() as sess:
+        assert "planted" not in sess
+        assert sess.get(auth.SESSION_KEY)
+
+
 def test_an_existing_jinja_global_is_not_clobbered() -> None:
     from flask_sqlalchemy import SQLAlchemy
 

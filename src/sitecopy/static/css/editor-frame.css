@@ -203,3 +203,13 @@ head [data-ct-keys]::after, meta[data-ct-keys]::after, link[data-ct-keys]::after
 /* The site's own scroll-reveal animation starts sections at opacity 0; in the
    editor everything must be visible and clickable from the start. */
 .reveal { opacity: 1 !important; transform: none !important; }
+
+/* The canvas is a separate document, so it needs its own reduced-motion guard: kill the
+   ct-t fill fade and any transition when the user asked the OS for less motion. */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}

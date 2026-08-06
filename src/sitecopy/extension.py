@@ -137,14 +137,11 @@ class SiteCopy:
         )
 
         app.extensions[EXTENSION_KEY] = state
+        # The marker rewrite and the preview/clickjacking headers run either way — a host
+        # opting out of the Jinja globals still previews drafts and still frames the site.
+        resolver.harden_responses(app)
         if options.get("jinja_globals", True):
             resolver.register_jinja(app, registry)
-        else:
-            # The response hook is not optional: without it `?edit=1` ships private-use
-            # markers straight to the browser.
-            from sitecopy import editor_markup
-
-            editor_markup.install(app)
         app.register_blueprint(build_blueprint(state))
         return state
 

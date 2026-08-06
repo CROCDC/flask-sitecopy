@@ -129,7 +129,7 @@
       buttons.forEach((b) => {
         const on = b === btn;
         b.classList.toggle("is-current", on);
-        b.setAttribute("aria-selected", on ? "true" : "false");
+        b.setAttribute("aria-pressed", on ? "true" : "false");
       });
       if (btn.dataset.ctFormat === "device") showDevice(btn);
       else showCard(btn.dataset.card);

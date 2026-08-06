@@ -387,6 +387,9 @@ def _render(template: str, **context: Any) -> str:
         sitecopy_site_url=state.site_url,
         sitecopy_nav=state.nav,
         sitecopy_owns_auth=state.owns_auth,
+        # Whether there is a session right now — the logout control keys off this, not
+        # off owns_auth, so it never shows on the login screen before you are in.
+        sitecopy_logged_in=state.is_logged_in(),
         sitecopy_csrf=csrf.token(),
         **context,
     )
@@ -620,7 +623,14 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
                 flash(message, "error")
             flash("No publicamos nada: hay borradores con errores.", "error")
             return redirect(url_for(f"{state.blueprint_name}.index"))
-        changed = current_store().publish(list(registry.fields), registry.defaults)
+        store = current_store()
+        changed = store.publish(list(registry.fields), registry.defaults)
+        # Drafts orphaned by a renamed/removed key can never be published (nothing
+        # renders them), so publishing the whole site drops them rather than leaving the
+        # count stuck above zero forever. After publish, every remaining draft is one.
+        orphans = [k for k in store.draft_keys() if k not in registry.fields]
+        if orphans:
+            store.discard_drafts(orphans)
         resolver.save()
         _flash_count(changed, "Se publicó {n} texto.", "Se publicaron {n} textos.")
         return redirect(url_for(f"{state.blueprint_name}.index"))
@@ -641,7 +651,9 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
         keys = (
             sorted({str(key) for key in data["keys"] if str(key) in registry.fields})
             if scoped
-            else list(registry.fields)
+            # Unscoped means "everything pending" — including a draft orphaned by a
+            # renamed key, which registry.fields would never reach.
+            else current_store().draft_keys()
         )
         dropped = current_store().discard_drafts(keys)
         resolver.save()
@@ -666,6 +678,7 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
             pending=resolver.pending_draft_count(group),
             baseline_prefix=BASELINE_PREFIX,
             invalid_keys=[],
+            field_errors={},
         )
 
     @bp.route("/<group_key>", methods=["POST"])
@@ -697,6 +710,9 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
                     pending=resolver.pending_draft_count(group),
                     baseline_prefix=BASELINE_PREFIX,
                     invalid_keys=error_keys,
+                    # Positionally aligned by `_add_error`; a field fails at most once
+                    # per submission, so the keys are unique.
+                    field_errors=dict(zip(error_keys, errors)),
                 ),
                 400,
             )

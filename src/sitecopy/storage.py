@@ -43,7 +43,15 @@ class TextRow:
 
 
 class TextStore(ABC):
-    """Persistence for the overrides. Everything else in the library goes through this."""
+    """Persistence for the overrides. Everything else in the library goes through this.
+
+    The abstract methods below are the whole runtime contract: a custom store that
+    answers them works everywhere the library reads or writes copy. The bundled stores
+    also carry two conveniences the library never calls at runtime — ``set_published``
+    (seed a value straight to live) and ``delete`` (drop a row outright) — used by
+    seeding and admin cleanup; both bundled stores implement both, so tests can exercise
+    them across implementations.
+    """
 
     @abstractmethod
     def as_map(self) -> dict[str, tuple[str | None, str | None]]:
@@ -217,6 +225,19 @@ class SQLAlchemyStore(TextStore):
         for row in rows:
             if row.draft_value is None:
                 continue
+            live = (
+                row.published_value
+                if row.published_value is not None
+                else defaults.get(row.key)
+            )
+            if row.draft_value == live:
+                # A draft that matches what is already live: consume it, but nothing
+                # changed. Counting it inflated "Se publicó N texto"; rewriting
+                # previous_value here would also throw away the real previous wording.
+                row.draft_value = None
+                if row.is_empty:
+                    self._drop(row)
+                continue
             value: str | None = row.draft_value
             if value == defaults.get(row.key):
                 value = None
@@ -361,12 +382,33 @@ class MemoryStore(TextStore):
         if row.is_empty:
             del rows[key]
 
+    def delete(self, key: str) -> bool:
+        """Drop the row outright. True when one existed, False when there was none —
+        the same contract as the SQLAlchemy store, staged until the next commit."""
+        rows = self._working()
+        if key not in rows:
+            return False
+        del rows[key]
+        return True
+
     def publish(self, keys: list[str], defaults: dict[str, str]) -> int:
         rows = self._working()
         changed = 0
         for key in keys:
             row = rows.get(key)
             if row is None or row.draft_value is None:
+                continue
+            live = (
+                row.published_value
+                if row.published_value is not None
+                else defaults.get(key)
+            )
+            if row.draft_value == live:
+                # A draft equal to what is already live: consume it, count nothing, and
+                # keep the real previous_value. See the SQLAlchemy store for the why.
+                row.draft_value = None
+                if row.is_empty:
+                    del rows[key]
                 continue
             value: str | None = row.draft_value
             if value == defaults.get(key):

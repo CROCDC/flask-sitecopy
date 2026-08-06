@@ -39,7 +39,7 @@
                 <span class="adm-exit-text">Ver la web</span>
             </a>
 
-            {% if sitecopy_owns_auth %}
+            {% if sitecopy_owns_auth and sitecopy_logged_in %}
             <form method="post" action="{{ url_for(sitecopy_bp ~ '.logout') }}">
                 <input type="hidden" name="_sitecopy_csrf" value="{{ sitecopy_csrf }}">
                 {# Icon-only on a narrow screen: the word is what wraps the header onto
@@ -62,7 +62,9 @@
         {% if messages %}
         <div class="adm-flashes">
             {% for category, message in messages %}
-            <div class="adm-flash adm-flash-{{ category }}">{{ message }}</div>
+            {# An error is assertive (it blocked something); a success/notice is polite. #}
+            <div class="adm-flash adm-flash-{{ category }}"
+                 role="{{ 'alert' if category == 'error' else 'status' }}">{{ message }}</div>
             {% endfor %}
         </div>
         {% endif %}

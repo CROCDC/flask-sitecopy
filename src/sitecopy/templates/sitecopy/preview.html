@@ -30,18 +30,22 @@
      data-site-url="{{ sitecopy_site_url }}"
      data-preview-path="{{ preview_path }}">
 
-    <div class="ct-formats" role="tablist" aria-label="Formato de previsualización">
+    {# Not a tablist: these buttons swap what the stage SHOWS (a device width, or a
+       share-card facsimile), and there are no tabpanels wired with aria-controls. A
+       tablist would promise arrow-key navigation that isn't here — same call the
+       editor's device switcher makes. role=group + aria-pressed instead. #}
+    <div class="ct-formats" role="group" aria-label="Formato de previsualización">
         {% for device in devices %}
-        <button type="button" role="tab" class="ct-format{% if loop.first %} is-current{% endif %}"
+        <button type="button" class="ct-format{% if loop.first %} is-current{% endif %}"
                 data-ct-format="device" data-width="{{ device.width }}" data-height="{{ device.height }}"
-                aria-selected="{{ 'true' if loop.first else 'false' }}">
+                aria-pressed="{{ 'true' if loop.first else 'false' }}">
             {{ device.label }}
             <small>{{ device.width }}px</small>
         </button>
         {% endfor %}
         {% for card in cards %}
-        <button type="button" role="tab" class="ct-format" data-ct-format="card" data-card="{{ card.key }}"
-                aria-selected="false">
+        <button type="button" class="ct-format" data-ct-format="card" data-card="{{ card.key }}"
+                aria-pressed="false">
             {{ card.label }}
             <small>al compartir</small>
         </button>

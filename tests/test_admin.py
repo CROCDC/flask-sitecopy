@@ -404,3 +404,27 @@ def test_publish_everything_refuses_when_a_draft_is_invalid(app, admin) -> None:
         resolver.save()
     admin.post("/admin/content/publish")
     assert state_of(app, "page.about.title")["published"] is None
+
+
+def test_a_draft_orphaned_by_a_removed_key_is_counted_and_discardable(app, admin) -> None:
+    """A draft whose key left the registry (renamed or removed) used to be invisible and
+    unreachable — never counted, never publishable, never discardable. The site-wide
+    count now sees it and 'descartar todo' clears it."""
+    draft(app, "ghost.removed", "texto huérfano")
+    with app.app_context():
+        assert "ghost.removed" in current_store().draft_keys()
+        assert resolver.pending_draft_count() == 1
+    admin.post("/admin/content/discard")
+    with app.app_context():
+        assert current_store().draft_keys() == []
+
+
+def test_publishing_everything_clears_an_orphaned_draft(app, admin) -> None:
+    """It can never go live (nothing renders it), so publish-all drops it instead of
+    leaving the pending count stuck above zero."""
+    draft(app, "home.hero.body", "vivo")
+    draft(app, "ghost.removed", "huérfano")
+    admin.post("/admin/content/publish")
+    assert state_of(app, "home.hero.body")["published"] == "vivo"
+    with app.app_context():
+        assert current_store().draft_keys() == []
