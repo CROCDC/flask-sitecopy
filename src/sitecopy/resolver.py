@@ -493,10 +493,16 @@ def group_states(group: Group) -> dict[str, dict[str, Any]]:
 
 
 def pending_draft_count(group: Group | None = None) -> int:
-    registry = current_registry()
-    keys = [f.key for f in group.fields] if group is not None else list(registry.fields)
+    # Site-wide, count every pending draft — including one orphaned by a renamed or
+    # removed key. Counting only registry.fields hid such a draft from the index, so it
+    # was never shown, never publishable and never discardable: stuck forever. The
+    # site-wide publish/discard now act on the same full set, so this stays honest.
+    if group is None:
+        return len(current_store().draft_keys())
     overrides = _overrides()
-    return sum(1 for key in keys if overrides.get(key, (None, None))[1] is not None)
+    return sum(
+        1 for f in group.fields if overrides.get(f.key, (None, None))[1] is not None
+    )
 
 
 def override_count(group: Group) -> int:
