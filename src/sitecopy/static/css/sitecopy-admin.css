@@ -100,7 +100,7 @@
 .ct-input {
     font-family: inherit; font-size: 1rem; color: var(--adm-ink);
     background: var(--adm-card); width: 100%;
-    border: 1px solid var(--adm-line); border-radius: 10px;
+    border: 1px solid var(--adm-input-line); border-radius: 10px;
     padding: 0.7rem 0.85rem; margin-top: 0.45rem; resize: vertical;
 }
 .ct-input:focus { outline: 2px solid var(--adm-accent); outline-offset: 1px; border-color: var(--adm-accent); }
