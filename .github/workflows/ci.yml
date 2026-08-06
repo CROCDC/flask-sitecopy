@@ -28,7 +28,7 @@ jobs:
       - name: Unit + integration + property tests (with coverage)
         # Coverage gate (fail_under) lives in pyproject; --cov-fail-under here is belt
         # and braces so a config drift can't silently drop the floor.
-        run: pytest --cov --cov-report=term-missing --cov-fail-under=91
+        run: pytest --cov --cov-report=term-missing --cov-fail-under=93
 
   e2e:
     name: e2e (editor, Playwright)

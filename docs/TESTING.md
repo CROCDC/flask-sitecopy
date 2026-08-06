@@ -5,6 +5,20 @@ esta librería en concreto: sus módulos, sus zonas de riesgo reales y los hueco
 tiene la suite. Cada fase termina en una *sesión de caza*: correr lo nuevo, hacer triage,
 y por cada bug real dejar un test de regresión **antes** del fix.
 
+## Progreso
+
+- ✅ **Fase 0 — CI + medición.** GitHub Actions (matriz 3.10–3.13) corre pytest con
+  cobertura de ramas y umbral (`fail_under`, un ratchet que solo sube), más un job E2E que
+  instala Chromium. Extras `test`/`e2e` y config en `pyproject.toml`.
+- ✅ **Fase 1 — E2E del editor.** `tests/e2e/`: server demo en subproceso con DB temporal
+  y 13 tests de navegador sobre los flujos del editor, con aislamiento por test.
+- ✅ **Fase 2 — property-based.** `tests/test_properties.py`: split de `lines`,
+  normalización idempotente, round-trip, tokens, **fuzz del sanitizer** (Fase 3 adelantada)
+  y una **máquina de estados que exige que `MemoryStore` y `SQLAlchemyStore` no diverjan** —
+  la forma general del bug de `get()`. Cobertura de ramas 91.9% → **93.1%**.
+- ⏭️ **Siguiente:** completar Fase 3 (corpus XSS, CSRF, doble-sanitización del manifest) y
+  Fase 4 (postMessage/a11y/concurrencia).
+
 ## Estado actual (línea de base)
 
 Medido con `pytest --cov`:

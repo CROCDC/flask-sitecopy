@@ -63,5 +63,5 @@ source = ["sitecopy"]
 # Branch coverage (stricter than line coverage) on the current baseline. This is a
 # ratchet: it only moves up. Each testing phase that lands raises it toward the ≥97%
 # target in docs/TESTING.md.
-fail_under = 91
+fail_under = 93
 show_missing = true
