@@ -7,7 +7,7 @@ from flask import Flask, render_template_string
 
 from sitecopy import MemoryStore, SiteCopy
 
-from conftest import build_app, build_registry
+from appfactory import build_app, build_registry
 
 
 def test_a_registry_is_required() -> None:
@@ -157,7 +157,9 @@ def test_two_registries_can_live_on_one_app() -> None:
     from flask_sqlalchemy import SQLAlchemy
 
     app = Flask(__name__)
-    app.config.update(TESTING=True, SECRET_KEY="k", SQLALCHEMY_DATABASE_URI="sqlite://")
+    app.config.update(
+        TESTING=True, SECRET_KEY="k", SQLALCHEMY_DATABASE_URI="sqlite://", SITECOPY_CSRF=False
+    )
     db = SQLAlchemy()
     db.init_app(app)
 

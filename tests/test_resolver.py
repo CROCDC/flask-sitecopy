@@ -8,7 +8,7 @@ from markupsafe import Markup
 from sitecopy import resolver, t, t_lines, t_optional
 from sitecopy.state import current_store
 
-from conftest import build_app
+from appfactory import build_app
 
 
 def publish(app, key: str, value: str) -> None:
@@ -149,6 +149,31 @@ def test_lines_come_back_as_a_list_without_the_blanks(app) -> None:
         assert t_lines("home.hero.bullets") == ["Uno", "Dos"]
 
 
+def test_lines_split_only_on_newline_not_on_exotic_separators(app) -> None:
+    """A U+2028/vertical-tab pasted from a PDF must NOT become an extra bullet.
+
+    t_lines used to use str.splitlines(), which breaks on those too — while the save
+    path and the editor JS split on "\\n" only. A value carrying one rendered more
+    bullets on the public page than the editor ever showed, and the editor's
+    click-to-line mapping then pointed at the wrong bullet.
+    """
+    # Stored directly, as a restored backup / manual UPDATE would (bypassing the save
+    # normalizer): the render path itself must not over-split. \u2028 is LINE SEPARATOR.
+    publish(app, "home.hero.bullets", "Uno\u2028Dos\nTres")
+    with app.test_request_context("/"):
+        assert t_lines("home.hero.bullets") == ["Uno\u2028Dos", "Tres"]
+
+
+def test_saving_a_lines_field_folds_exotic_separators_to_newline(app) -> None:
+    """The save path turns those separators into real bullets, consistently."""
+    from sitecopy.admin import _normalize
+    from sitecopy.registry import TextField
+
+    field = TextField("home.hero.bullets", "Lista", "x", type="lines")
+    # \u2028 LINE SEPARATOR and \x0b VERTICAL TAB both fold to "\n".
+    assert _normalize(field, "Uno\u2028Dos\x0bTres") == "Uno\nDos\nTres"
+
+
 def test_a_rich_value_comes_back_as_sanitized_markup(app) -> None:
     publish(app, "page.about.body", "<p>Hola</p><script>alert(1)</script>")
     with app.test_request_context("/"):
@@ -273,3 +298,45 @@ def test_everything_works_the_same_over_the_memory_store(memory_app) -> None:
     publish(memory_app, "home.hero.body", "Sin base de datos.")
     with memory_app.test_request_context("/"):
         assert t("home.hero.body") == "Sin base de datos."
+
+
+# --- gaps found by mutation testing (resolver.py) -------------------------------
+
+def test_a_url_field_only_accepts_http_links(app) -> None:
+    """A `url` field renders http(s) only; a safe-but-non-http value (mailto:, a
+    relative path) falls back to the registry default, at RENDER time."""
+    publish(app, "global.site", "mailto:hola@acme.test")
+    with app.test_request_context("/"):
+        assert str(t("global.site")) == "https://acme.test/"  # the default
+    publish(app, "global.site", "https://ok.test/")
+    with app.test_request_context("/"):
+        assert str(t("global.site")) == "https://ok.test/"
+
+
+def test_a_per_call_token_renders_its_value(app) -> None:
+    """A param passed to t() is interpolated into the string, not dropped. The value has
+    to actually USE {section}, or the param never reaches the output."""
+    publish(app, "home.meta.title", "{brand} · {section}")
+    with app.test_request_context("/"):
+        assert str(t("home.meta.title", section="ofertas")) == "Acme · ofertas"
+
+
+def test_editable_optional_is_the_field_when_it_exists_else_none(app) -> None:
+    from sitecopy.resolver import editable_optional
+
+    with app.test_request_context("/"):
+        assert str(editable_optional("home.hero.title")) == "Bienvenido a Acme"
+        assert editable_optional("no.such.key") is None
+
+
+def test_the_counts_reflect_drafts_and_overrides(app) -> None:
+    from sitecopy import override_count, pending_draft_count
+    from sitecopy.state import current_registry
+
+    publish(app, "home.hero.title", "Publicado")
+    draft(app, "home.hero.body", "Borrador")
+    with app.test_request_context("/"):
+        group = current_registry().groups_by_key["home"]
+        assert pending_draft_count(group) == 1   # one draft in the group
+        assert override_count(group) == 1         # one published override
+        assert pending_draft_count() == 1         # one draft site-wide

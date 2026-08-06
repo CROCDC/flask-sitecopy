@@ -41,6 +41,7 @@ from sitecopy.resolver import (
     is_edit_mode,
     rendered_keys,
 )
+from sitecopy.sanitizer import sanitize
 from sitecopy.state import current_registry, current_state
 
 # Elements whose content is raw text: a wrapper element inside them would render as
@@ -227,18 +228,28 @@ def field_payload(key: str) -> dict[str, Any]:
     field = registry.fields[key]
     state = field_state(key)
     group = registry.groups_by_key[registry.field_group[key]]
+
+    # A rich value the editor loads goes into innerHTML in the canvas (an admin-origin
+    # document). The public render sanitizes on the way out; do the same here, so a value
+    # that reached the table some other way — a restored backup, a manual UPDATE — cannot
+    # inject script into the editor either. Idempotent on values that were already clean.
+    def _clean(value: Any) -> Any:
+        if field.type == "rich" and isinstance(value, str):
+            return sanitize(value)
+        return value
+
     return {
-        "raw": state["value"],
+        "raw": _clean(state["value"]),
         "type": field.type,
         "label": field.label,
         "hint": field.hint,
         "max": field.max_length,
-        "default": field.default,
+        "default": _clean(field.default),
         # Without this the panel's "volver al texto anterior" could never appear for a
         # key the current page renders — i.e. almost never.
-        "previous": state["previous"],
+        "previous": _clean(state["previous"]),
         # What the site currently shows: `raw` is the draft once there is one.
-        "live": state["live"],
+        "live": _clean(state["live"]),
         "group": group.key,
         "groupTitle": group.title,
         "section": registry.field_section.get(key, ""),

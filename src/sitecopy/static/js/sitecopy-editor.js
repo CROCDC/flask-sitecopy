@@ -22,6 +22,11 @@
   const undoBtn = root.querySelector("[data-ed-undo]");
   const findDraftsBtn = root.querySelector("[data-ed-find-drafts]");
   const SAVE_URL = root.dataset.saveUrl;
+  // The CSRF token for this session, rendered into the shell. Sent on every mutating
+  // fetch; the server rejects a POST without it. A cross-site page can force a request
+  // but cannot read this to include it.
+  const CSRF = root.dataset.csrf || "";
+  const jsonHeaders = { "Content-Type": "application/json", "X-Sitecopy-CSRF": CSRF };
 
   // key -> the value the user has typed but not saved yet.
   const pending = Object.create(null);
@@ -509,7 +514,7 @@
   async function revertKey(keys) {
     const response = await fetch(root.dataset.revertUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders,
       body: JSON.stringify({ keys: keys }),
     }).catch(() => null);
     const payload = response ? await response.json().catch(() => null) : null;
@@ -1052,7 +1057,7 @@
     try {
       const response = await fetch(SAVE_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonHeaders,
         body: JSON.stringify({ changes: changes, action: action, keys: scope }),
         signal: abort.signal,
       });
@@ -1210,7 +1215,7 @@
       // descartados." over a request that had discarded nothing.
       const response = await fetch(root.dataset.discardUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonHeaders,
         body: JSON.stringify({ keys: keys }),
       }).catch(() => null);
       const payload = response ? await response.json().catch(() => null) : null;

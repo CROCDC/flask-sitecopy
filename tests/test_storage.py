@@ -11,7 +11,7 @@ import pytest
 from sitecopy import MemoryStore
 from sitecopy.state import current_store
 
-from conftest import build_app
+from appfactory import build_app
 
 DEFAULTS = {"a": "por defecto", "b": "otro"}
 
@@ -121,6 +121,27 @@ def test_discarding_is_scoped_too(store) -> None:
     assert store.draft_keys() == ["b"]
 
 
+def test_discarding_a_key_with_no_row_is_a_no_op(store) -> None:
+    """A key that was never written has no row; discarding it drops nothing and, above
+    all, does not blow up dereferencing a row that isn't there."""
+    assert store.discard_drafts(["never_set"]) == 0
+    store.set_published("a", "vivo")  # a row with no draft
+    assert store.discard_drafts(["a"]) == 0
+
+
+def test_delete_reports_whether_a_row_existed() -> None:
+    """SQLAlchemyStore.delete: True when it removed a row, False when there was none."""
+    from sitecopy.state import current_store
+
+    app = build_app()
+    with app.app_context():
+        store = current_store()
+        store.set_published("a", "x")
+        store.commit()
+        assert store.delete("a") is True
+        assert store.delete("never_set") is False
+
+
 # --- transactions --------------------------------------------------------------
 
 
@@ -179,3 +200,15 @@ def test_ensure_schema_adds_a_column_an_older_database_is_missing() -> None:
             for row in store.db.session.execute(text("PRAGMA table_info(site_texts)")).fetchall()
         }
         assert "previous_value" in columns
+
+
+def test_get_returns_a_copy_not_the_stored_row(store) -> None:
+    """Mutating the result of get() must not rewrite the store's own state.
+
+    SQLAlchemyStore.get() builds a fresh TextRow; MemoryStore used to hand back its live
+    internal object, so the two stores disagreed the moment a caller wrote to the result.
+    """
+    store.set_published("a", "vivo")
+    got = store.get("a")
+    got.published_value = "MODIFICADO"
+    assert store.get("a").published_value == "vivo"

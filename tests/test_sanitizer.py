@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from sitecopy.sanitizer import safe_href, sanitize, strip_tags
+from sitecopy.sanitizer import safe_href, sanitize, strip_tags, visible_text
 
 
 # --- what must survive ---------------------------------------------------------
@@ -163,3 +163,90 @@ def test_real_markup_is_still_unwrapped_not_printed() -> None:
 def test_sanitize_stays_idempotent_with_the_rescued_text() -> None:
     once = sanitize("<p>a <de lunes a viernes> b</p>")
     assert sanitize(once) == once
+
+
+# --- a corpus of known-in-the-wild XSS payloads --------------------------------
+
+# Each of these has worked as stored/reflected XSS somewhere. After sanitizing, none may
+# leave an executable tag, an event handler, or a javascript: URL behind.
+XSS_CORPUS = [
+    '<script>alert(1)</script>',
+    '<img src=x onerror=alert(1)>',
+    '<svg/onload=alert(1)>',
+    '<a href="javascript:alert(1)">x</a>',
+    '<a href="jAvAsCrIpT:alert(1)">x</a>',
+    '<a href="  javascript:alert(1)">x</a>',
+    '<iframe src="javascript:alert(1)"></iframe>',
+    '<body onload=alert(1)>',
+    '<div style="background:url(javascript:alert(1))">x</div>',
+    '<p onmouseover="alert(1)">x</p>',
+    '<a href="data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==">x</a>',
+    '<math><mtext><script>alert(1)</script></mtext></math>',
+    '<object data="javascript:alert(1)"></object>',
+    '<a href="vbscript:msgbox(1)">x</a>',
+    '<input autofocus onfocus=alert(1)>',
+    '<details open ontoggle=alert(1)>',
+    '<style>@import"http://evil";</style>',
+    '<a href="java\tscript:alert(1)">x</a>',
+    '<noscript><p title="</noscript><img src=x onerror=alert(1)>">',
+]
+
+_BAD_TAG = __import__("re").compile(
+    r"<\s*(script|style|iframe|object|embed|svg|math|template|noscript|body|input|details)\b",
+    __import__("re").I,
+)
+_HANDLER = __import__("re").compile(r"\son\w+\s*=", __import__("re").I)
+_BAD_SCHEME = __import__("re").compile(r"(javascript|vbscript|data)\s*:", __import__("re").I)
+
+
+@pytest.mark.parametrize("payload", XSS_CORPUS)
+def test_no_known_payload_survives_sanitizing(payload) -> None:
+    out = sanitize(payload)
+    assert not _BAD_TAG.search(out), out
+    assert not _HANDLER.search(out), out
+    assert not _BAD_SCHEME.search(out), out
+
+
+@pytest.mark.parametrize("payload", XSS_CORPUS)
+def test_sanitizing_is_idempotent_on_every_payload(payload) -> None:
+    once = sanitize(payload)
+    assert sanitize(once) == once
+
+
+# --- gaps found by mutation testing (mutación dirigida sobre sanitizer.py) ------
+
+def test_leading_whitespace_cannot_smuggle_a_protocol_relative_link() -> None:
+    """Whitespace is stripped before the scheme check, so " //evil" (which a browser
+    would trim and navigate off-site) is rejected, not treated as a relative path."""
+    assert safe_href(" //evil.test") is None
+    assert safe_href("\t //evil.test") is None
+    assert safe_href("  /\\evil.test") is None
+
+
+def test_a_colon_inside_a_path_is_not_read_as_a_scheme() -> None:
+    """A ':' after a '/', '#' or '?' is part of the path, so the link is kept."""
+    assert safe_href("docs/2:1.html") == "docs/2:1.html"
+    assert safe_href("a?x:y") == "a?x:y"
+    assert safe_href("page#a:b") == "page#a:b"
+
+
+def test_an_allowed_void_tag_inside_a_dropped_element_does_not_leak() -> None:
+    """While a <script>/<svg> is being dropped with its content, a self-closing <br>
+    inside it must not escape into the output."""
+    assert sanitize("<script><br/>x</script>ok") == "ok"
+    assert sanitize("<svg><br/>y</svg>ok") == "ok"
+
+
+def test_a_self_closing_anchor_with_a_bad_href_is_dropped_cleanly() -> None:
+    assert sanitize('<a href="javascript:x"/>hola') == "hola"
+    # …and a good one is emitted.
+    assert sanitize('<a href="https://ok.test"/>hi') == '<a href="https://ok.test"></a>hi'
+
+
+def test_visible_text_returns_the_text_that_would_show() -> None:
+    """The loss guard compares visible_text before/after sanitizing; if it returned ''
+    for real content the guard would never fire (and the mutation that does exactly that
+    otherwise survives)."""
+    assert visible_text("Hola <b>mundo</b>") == "Hola mundo"
+    assert visible_text("<p>x</p><p>y</p>") == "x y"
+    assert visible_text("") == ""

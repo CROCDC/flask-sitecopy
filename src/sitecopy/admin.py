@@ -19,6 +19,7 @@ Screens:
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from flask import (
@@ -26,6 +27,7 @@ from flask import (
     Response,
     abort,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -33,6 +35,7 @@ from flask import (
 )
 
 from sitecopy import auth as bundled_auth
+from sitecopy import csrf
 from sitecopy import resolver
 from sitecopy.editor_markup import field_payload
 from sitecopy.registry import Group, TextField
@@ -82,6 +85,11 @@ def _group_or_404(group_key: str) -> Group:
     return group
 
 
+# The line boundaries str.splitlines() breaks on beyond \n and \r: vertical tab, form
+# feed, FS/GS/RS, NEL, and the Unicode LINE/PARAGRAPH separators.
+_EXOTIC_NEWLINES = re.compile("[\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029]")
+
+
 def _normalize(field: TextField, raw: str) -> str:
     """Whitespace normalization shared by every field type.
 
@@ -92,6 +100,12 @@ def _normalize(field: TextField, raw: str) -> str:
     # second <ct-t> wrapper pointing at another key, and the private-use codepoints
     # shipped to public visitors as tofu.
     value = resolver.strip_edit_markers(raw).replace("\r\n", "\n").replace("\r", "\n")
+    # Every other Unicode line boundary str.splitlines() recognises (vertical tab, form
+    # feed, the file/group/record separators, NEL, LINE/PARAGRAPH SEPARATOR) folded to
+    # "\n" — the one separator the split rule, the editor JS and the render path agree
+    # on. A list pasted from a PDF or Word carries these; left alone they render as extra
+    # bullets the operator never authored and desync the editor's click-to-line mapping.
+    value = _EXOTIC_NEWLINES.sub("\n", value)
     if field.type in ("line", "url"):
         collapsed = " ".join(value.split())
         # Some fields are sentence fragments spliced into another string through a
@@ -373,6 +387,7 @@ def _render(template: str, **context: Any) -> str:
         sitecopy_site_url=state.site_url,
         sitecopy_nav=state.nav,
         sitecopy_owns_auth=state.owns_auth,
+        sitecopy_csrf=csrf.token(),
         **context,
     )
 
@@ -392,6 +407,29 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
         static_folder="static",
     )
     login_required = state.login_required
+
+    @bp.before_request
+    def _guard_csrf() -> Any:
+        """Reject a state-changing request that does not carry the session's CSRF token.
+
+        Safe methods pass. The token reaches us in a header (the editor's fetch) or a
+        hidden field (the no-JS forms), both rendered from the session — a cross-site
+        caller can force the request but cannot read the token to include it.
+        """
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return None
+        if not csrf.enabled() or csrf.valid():
+            return None
+        if bundled_auth.wants_json():
+            return (
+                jsonify(
+                    ok=False,
+                    reason="csrf",
+                    errors=["No pudimos verificar la sesión. Recargá el editor y probá de nuevo."],
+                ),
+                400,
+            )
+        abort(400)
 
     @bp.route("/")
     @login_required

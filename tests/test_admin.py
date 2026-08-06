@@ -7,7 +7,7 @@ import pytest
 from sitecopy import resolver
 from sitecopy.state import current_store
 
-from conftest import build_app
+from appfactory import build_app
 
 
 def login(client) -> None:

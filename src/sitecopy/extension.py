@@ -96,6 +96,9 @@ class SiteCopy:
         if options.get("password") is not None:
             app.config["SITECOPY_PASSWORD"] = options["password"]
         app.config.setdefault("SITECOPY_PASSWORD", "")
+        # CSRF protection on the panel's mutating routes. On by default; a host with its
+        # own CSRF layer can turn it off.
+        app.config.setdefault("SITECOPY_CSRF", True)
 
         prefix = str(options.get("url_prefix") or "/admin/content").rstrip("/")
         bp_name = str(options.get("blueprint_name") or "sitecopy")
