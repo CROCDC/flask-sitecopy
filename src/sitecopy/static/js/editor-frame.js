@@ -645,6 +645,10 @@
       const url = new URL(link.getAttribute("href"), window.location.href);
       if (url.origin !== window.location.origin) {
         link.setAttribute("target", "_blank");
+        // Without noopener the opened tab can reach back through window.opener
+        // (reverse tabnabbing). The server sanitizer already does this for rich
+        // links; this is the one path that rewrites target on the fly.
+        link.setAttribute("rel", "noopener noreferrer");
         return;
       }
       // The QUERY has to match too, or `href="/#shop"` on `/?edit=1` is a full load to

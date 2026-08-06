@@ -387,6 +387,9 @@ def _render(template: str, **context: Any) -> str:
         sitecopy_site_url=state.site_url,
         sitecopy_nav=state.nav,
         sitecopy_owns_auth=state.owns_auth,
+        # Whether there is a session right now — the logout control keys off this, not
+        # off owns_auth, so it never shows on the login screen before you are in.
+        sitecopy_logged_in=state.is_logged_in(),
         sitecopy_csrf=csrf.token(),
         **context,
     )
