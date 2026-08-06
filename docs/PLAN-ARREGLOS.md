@@ -9,6 +9,41 @@ Todo sobre la rama de la tarea; cada tanda es un commit (o un PR) autocontenido.
 
 ---
 
+## Estado de ejecución
+
+Ejecutado en esta rama. Todo verde: **340 tests unit/integración + 18 E2E** (con CSRF
+encendido, en navegador real), y **axe en 0 violaciones serias** en todas las pantallas.
+
+| ítem | estado | commit / nota |
+|------|--------|---------------|
+| A3, A4, U2 (contrastes) | ✅ | `--adm-ok`, nueva var `--adm-input-line`, verde de la demo |
+| A1 (preview tablist falso) | ✅ | `role=group` + `aria-pressed` |
+| A2 (grupo: hints/errores) | ✅ | `aria-describedby` + `.ct-error` por campo |
+| A8 (targets 44px) | ✅ | `.ct-restore`, `.ct-filter-clear`, `.ct-preview-reload` |
+| U1 (chrome de sesión en login) | ✅ | `sitecopy_logged_in` |
+| S3 (`rel=noopener` en canvas) | ✅ | editor-frame.js |
+| C1 (índice de `lines` con tokens) | ✅ | `_raw_lines`; regresión nueva |
+| C2 (publish cuenta no-ops) | ✅ | ambos stores; regresión cross-store |
+| S1 (hardening de preview siempre) | ✅ | `harden_responses`; regresión |
+| A5 (role=textbox / toolbar aria-pressed) | ✅ | `syncToolbar` |
+| A6 (prefers-reduced-motion) | ✅ | CSS admin+canvas, scrolls JS |
+| A7, A10 (live regions) | ✅ | flashes, error de login, contadores |
+| A11, A12 (empty state, nits) | ✅ | índice + `✎` decorativo |
+| C3 (drafts huérfanos) | ✅ | site-wide sobre `draft_keys()`; regresiones |
+| C4 (contrato `TextStore`) | ✅ | `MemoryStore.delete` + doc del ABC |
+| S2, S4 (login: doc rate-limit + rotación) | ✅ | `auth.py`; regresión |
+| **A9 (confirmación server-side sin JS)** | ⏸️ **diferido** | ver abajo |
+
+**Por qué A9 quedó fuera:** es el único ítem que **cambia el flujo de UX sin JavaScript**
+—necesita una página de confirmación intermedia, tocar las tres rutas destructivas, el JS
+(para que el usuario con JS no vea doble confirmación) y su propia E2E—, para un valor bajo:
+con JS —la práctica totalidad de los usuarios— las confirmaciones ya funcionan
+(`onsubmit=confirm` y `data-ct-confirm`). Meterlo apurado al final arriesgaba los flujos de
+publish/discard, que están bien cubiertos. Merece ser un cambio propio y deliberado. El
+diseño recomendado (patrón del campo `confirmed`) queda descrito en la Tanda 3, ítem A9.
+
+---
+
 ## Tanda 1 — Barato y de alto impacto
 
 Sin cambios de comportamiento salvo los visuales/ARIA. Mayormente CSS y plantillas.
@@ -132,8 +167,14 @@ número de líneas crudas no vacías, y el índice de cada una recupera la líne
 - **A6** — un bloque `@media (prefers-reduced-motion: reduce)` en `sitecopy-shell.css` que anule
   `transition`/`animation`; en el JS gatear `behavior:"smooth"` con
   `matchMedia("(prefers-reduced-motion: reduce)")`.
-- **A9** — confirmación server-side para discard/publish-all/discard-all (hoy solo JS): un paso
-  intermedio (página de confirmación) o un token de confirmación, para el fallback no-JS.
+- **A9** *(diferido — ver "Estado de ejecución")* — confirmación server-side para
+  discard/publish-all/discard-all (hoy solo JS). Diseño recomendado, patrón del campo
+  `confirmed`: la ruta destructiva, si el POST no trae `confirmed=1`, renderiza una página de
+  confirmación que re-postea la misma acción con `confirmed=1`; y el handler JS
+  (`data-ct-confirm` + los `onsubmit=confirm` del índice, unificados a `data-ct-confirm`)
+  inyecta ese campo al aceptar, para que el usuario con JS nunca vea doble confirmación. El
+  path JSON del editor (`/discard` scoped) queda intacto. Necesita: una plantilla `confirm.html`,
+  el chequeo en las tres rutas, el ajuste del JS, y E2E para ambos caminos (con y sin JS).
 - **A11 + A12** — empty state en `index.html:42-63`; `.ed-card-kind` `<p>` → `<h3>`; `aria-hidden`
   en el `✎` de `index.html:10`.
 - **C3** — acción de mantenimiento que liste/purgue drafts huérfanos (claves fuera del registry),
