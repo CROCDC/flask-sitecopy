@@ -453,7 +453,6 @@ def field_state(key: str) -> dict[str, Any]:
         "value": draft if draft is not None else live,
         "has_draft": draft is not None,
         "is_overridden": published is not None,
-        "returns_to_default": draft is not None and draft == field.default,
         # What was live before the last publish, so a mistake has a way back.
         "previous": previous,
         "has_previous": previous is not None and previous != live,

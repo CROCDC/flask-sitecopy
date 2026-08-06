@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from sitecopy.sanitizer import safe_href, sanitize, strip_tags
+from sitecopy.sanitizer import safe_href, sanitize, strip_tags, visible_text
 
 
 # --- what must survive ---------------------------------------------------------
@@ -211,3 +211,42 @@ def test_no_known_payload_survives_sanitizing(payload) -> None:
 def test_sanitizing_is_idempotent_on_every_payload(payload) -> None:
     once = sanitize(payload)
     assert sanitize(once) == once
+
+
+# --- gaps found by mutation testing (mutación dirigida sobre sanitizer.py) ------
+
+def test_leading_whitespace_cannot_smuggle_a_protocol_relative_link() -> None:
+    """Whitespace is stripped before the scheme check, so " //evil" (which a browser
+    would trim and navigate off-site) is rejected, not treated as a relative path."""
+    assert safe_href(" //evil.test") is None
+    assert safe_href("\t //evil.test") is None
+    assert safe_href("  /\\evil.test") is None
+
+
+def test_a_colon_inside_a_path_is_not_read_as_a_scheme() -> None:
+    """A ':' after a '/', '#' or '?' is part of the path, so the link is kept."""
+    assert safe_href("docs/2:1.html") == "docs/2:1.html"
+    assert safe_href("a?x:y") == "a?x:y"
+    assert safe_href("page#a:b") == "page#a:b"
+
+
+def test_an_allowed_void_tag_inside_a_dropped_element_does_not_leak() -> None:
+    """While a <script>/<svg> is being dropped with its content, a self-closing <br>
+    inside it must not escape into the output."""
+    assert sanitize("<script><br/>x</script>ok") == "ok"
+    assert sanitize("<svg><br/>y</svg>ok") == "ok"
+
+
+def test_a_self_closing_anchor_with_a_bad_href_is_dropped_cleanly() -> None:
+    assert sanitize('<a href="javascript:x"/>hola') == "hola"
+    # …and a good one is emitted.
+    assert sanitize('<a href="https://ok.test"/>hi') == '<a href="https://ok.test"></a>hi'
+
+
+def test_visible_text_returns_the_text_that_would_show() -> None:
+    """The loss guard compares visible_text before/after sanitizing; if it returned ''
+    for real content the guard would never fire (and the mutation that does exactly that
+    otherwise survives)."""
+    assert visible_text("Hola <b>mundo</b>") == "Hola mundo"
+    assert visible_text("<p>x</p><p>y</p>") == "x y"
+    assert visible_text("") == ""

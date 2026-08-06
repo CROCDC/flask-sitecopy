@@ -12,3 +12,8 @@ htmlcov/
 .DS_Store
 instance/
 example/instance/
+
+# mutation testing scratch
+mutants/
+.mutmut-cache
+html/

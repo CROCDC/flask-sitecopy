@@ -29,10 +29,19 @@ y por cada bug real dejar un test de regresión **antes** del fix.
   `sanitizeRich` del cliente validada con un paste malicioso real (ningún handler corre en
   el origen admin). i18n/encoding: emoji, RTL, combinantes y valores largos round-trip por
   store, render y manifest.
-- ⏭️ **Siguiente:** Fase 5 (mutation testing con mutmut). Pendiente menor: los tests
-  component-level de postMessage necesitan un runner JS (jest/vitest) — hoy el chequeo de
-  `event.source` está cubierto por revisión de código y el path de seguridad real
-  (sanitizeRich) por la E2E.
+- ✅ **Fase 5 — mutation testing.** Mutación dirigida (operadores AST con libcst) sobre
+  `sanitizer`, `storage` y `resolver`. Encontró **código muerto** (`returns_to_default`,
+  calculado y nunca leído → eliminado) y ~12 huecos reales de tests, todos cerrados:
+  bypass de whitespace en `safe_href`, `url` field http-only, fuga de markup desde región
+  suprimida, `visible_text` (loss-guard), `editable_optional`, los contadores, el token
+  por-llamada, y bordes de `discard`/`delete`. Resultado: resolver **0 sobrevivientes**,
+  storage 1 (equivalente: nombre de clase del modelo), sanitizer 4 (equivalentes: bordes
+  de anidamiento malformado sin impacto). Cobertura 93.5% → **94.7%**.
+- 🎯 **Plan ejecutado.** Balance de bugs reales encontrados y corregidos: el CSRF (Fase 3),
+  el contraste WCAG (Fase 4), el código muerto (Fase 5) — más ~12 huecos de tests cerrados.
+  Pendiente menor: los tests component-level de postMessage necesitan un runner JS
+  (jest/vitest); hoy el chequeo de `event.source` está cubierto por revisión de código y el
+  path de seguridad real (sanitizeRich) por la E2E.
 
 ## Estado actual (línea de base)
 

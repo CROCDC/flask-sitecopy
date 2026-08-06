@@ -298,3 +298,45 @@ def test_everything_works_the_same_over_the_memory_store(memory_app) -> None:
     publish(memory_app, "home.hero.body", "Sin base de datos.")
     with memory_app.test_request_context("/"):
         assert t("home.hero.body") == "Sin base de datos."
+
+
+# --- gaps found by mutation testing (resolver.py) -------------------------------
+
+def test_a_url_field_only_accepts_http_links(app) -> None:
+    """A `url` field renders http(s) only; a safe-but-non-http value (mailto:, a
+    relative path) falls back to the registry default, at RENDER time."""
+    publish(app, "global.site", "mailto:hola@acme.test")
+    with app.test_request_context("/"):
+        assert str(t("global.site")) == "https://acme.test/"  # the default
+    publish(app, "global.site", "https://ok.test/")
+    with app.test_request_context("/"):
+        assert str(t("global.site")) == "https://ok.test/"
+
+
+def test_a_per_call_token_renders_its_value(app) -> None:
+    """A param passed to t() is interpolated into the string, not dropped. The value has
+    to actually USE {section}, or the param never reaches the output."""
+    publish(app, "home.meta.title", "{brand} · {section}")
+    with app.test_request_context("/"):
+        assert str(t("home.meta.title", section="ofertas")) == "Acme · ofertas"
+
+
+def test_editable_optional_is_the_field_when_it_exists_else_none(app) -> None:
+    from sitecopy.resolver import editable_optional
+
+    with app.test_request_context("/"):
+        assert str(editable_optional("home.hero.title")) == "Bienvenido a Acme"
+        assert editable_optional("no.such.key") is None
+
+
+def test_the_counts_reflect_drafts_and_overrides(app) -> None:
+    from sitecopy import override_count, pending_draft_count
+    from sitecopy.state import current_registry
+
+    publish(app, "home.hero.title", "Publicado")
+    draft(app, "home.hero.body", "Borrador")
+    with app.test_request_context("/"):
+        group = current_registry().groups_by_key["home"]
+        assert pending_draft_count(group) == 1   # one draft in the group
+        assert override_count(group) == 1         # one published override
+        assert pending_draft_count() == 1         # one draft site-wide

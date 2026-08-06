@@ -121,6 +121,27 @@ def test_discarding_is_scoped_too(store) -> None:
     assert store.draft_keys() == ["b"]
 
 
+def test_discarding_a_key_with_no_row_is_a_no_op(store) -> None:
+    """A key that was never written has no row; discarding it drops nothing and, above
+    all, does not blow up dereferencing a row that isn't there."""
+    assert store.discard_drafts(["never_set"]) == 0
+    store.set_published("a", "vivo")  # a row with no draft
+    assert store.discard_drafts(["a"]) == 0
+
+
+def test_delete_reports_whether_a_row_existed() -> None:
+    """SQLAlchemyStore.delete: True when it removed a row, False when there was none."""
+    from sitecopy.state import current_store
+
+    app = build_app()
+    with app.app_context():
+        store = current_store()
+        store.set_published("a", "x")
+        store.commit()
+        assert store.delete("a") is True
+        assert store.delete("never_set") is False
+
+
 # --- transactions --------------------------------------------------------------
 
 
