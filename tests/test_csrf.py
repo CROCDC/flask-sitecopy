@@ -35,7 +35,12 @@ def _login(client):
     page = client.get("/admin/content/login").get_data(as_text=True)
     token = _token_in(page)
     client.post("/admin/content/login", data={"password": "secreto", FORM_FIELD: token})
-    return token
+    # Login rotates the session (fixation defence), and with it the CSRF token. A real
+    # client now uses the token from the page it landed on — read it back the same way.
+    editor = client.get("/admin/content/").get_data(as_text=True)
+    m = re.search(r'data-csrf="([^"]+)"', editor)
+    assert m, "no CSRF token on the editor page after login"
+    return m.group(1)
 
 
 def _token_in(html: str) -> str:

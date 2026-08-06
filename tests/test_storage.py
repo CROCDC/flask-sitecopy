@@ -148,17 +148,12 @@ def test_discarding_a_key_with_no_row_is_a_no_op(store) -> None:
     assert store.discard_drafts(["a"]) == 0
 
 
-def test_delete_reports_whether_a_row_existed() -> None:
-    """SQLAlchemyStore.delete: True when it removed a row, False when there was none."""
-    from sitecopy.state import current_store
-
-    app = build_app()
-    with app.app_context():
-        store = current_store()
-        store.set_published("a", "x")
-        store.commit()
-        assert store.delete("a") is True
-        assert store.delete("never_set") is False
+def test_delete_reports_whether_a_row_existed(store) -> None:
+    """delete: True when it removed a row, False when there was none — on both stores."""
+    store.set_published("a", "x")
+    store.commit()
+    assert store.delete("a") is True
+    assert store.delete("never_set") is False
 
 
 # --- transactions --------------------------------------------------------------

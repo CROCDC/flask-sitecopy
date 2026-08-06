@@ -223,6 +223,21 @@ def test_preview_hardening_runs_even_without_the_jinja_globals() -> None:
     assert normal.headers.get("Content-Security-Policy") == "frame-ancestors 'self'"
 
 
+def test_the_bundled_login_rotates_the_session() -> None:
+    """Anything a pre-login session carried is dropped on authentication (defence in
+    depth against session fixation), and the admin flag is set on the fresh session."""
+    from sitecopy import auth
+
+    app = build_app()
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["planted"] = "x"
+    client.post("/admin/content/login", data={"password": "secreto"})
+    with client.session_transaction() as sess:
+        assert "planted" not in sess
+        assert sess.get(auth.SESSION_KEY)
+
+
 def test_an_existing_jinja_global_is_not_clobbered() -> None:
     from flask_sqlalchemy import SQLAlchemy
 
