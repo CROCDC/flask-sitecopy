@@ -70,7 +70,7 @@ production.
 ## Install
 
 ```
-pip install "flask-sitecopy @ git+https://github.com/CROCDC/flask-sitecopy@v0.1.0"
+pip install flask-sitecopy
 ```
 
 For local work on the library itself: `pip install -e ../flask-sitecopy`.
