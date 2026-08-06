@@ -666,6 +666,7 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
             pending=resolver.pending_draft_count(group),
             baseline_prefix=BASELINE_PREFIX,
             invalid_keys=[],
+            field_errors={},
         )
 
     @bp.route("/<group_key>", methods=["POST"])
@@ -697,6 +698,9 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
                     pending=resolver.pending_draft_count(group),
                     baseline_prefix=BASELINE_PREFIX,
                     invalid_keys=error_keys,
+                    # Positionally aligned by `_add_error`; a field fails at most once
+                    # per submission, so the keys are unique.
+                    field_errors=dict(zip(error_keys, errors)),
                 ),
                 400,
             )
