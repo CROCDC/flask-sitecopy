@@ -24,7 +24,7 @@ def test_keeps_links_and_line_breaks() -> None:
     assert sanitize('<p>a<br>b</p>') == "<p>a<br>b</p>"
     assert sanitize('<a href="/contacto">Contacto</a>') == '<a href="/contacto">Contacto</a>'
     assert sanitize('<a href="https://x.com/y">x</a>') == '<a href="https://x.com/y">x</a>'
-    assert sanitize('<a href="mailto:hola@gluckbags.com">mail</a>').startswith("<a href=")
+    assert sanitize('<a href="mailto:hola@example.com">mail</a>').startswith("<a href=")
 
 
 def test_unknown_tags_are_dropped_but_their_text_survives() -> None:

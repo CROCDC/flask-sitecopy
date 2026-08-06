@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  publish:
+    name: build + publish to PyPI
+    runs-on: ubuntu-latest
+    permissions:
+      # Trusted publishing: PyPI verifies this short-lived OIDC token instead of a
+      # stored API key, so there is no long-lived secret to leak or rotate.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Tag must match the version in pyproject
+        # A tag that drifted from the packaged version is what left v0.1.0 pointing at
+        # stale code. Fail the release rather than publish a version nobody reviewed.
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          if [ "$tag" != "$pkg" ]; then
+            echo "tag ${GITHUB_REF_NAME} declares $tag but pyproject says $pkg"
+            exit 1
+          fi
+
+      - name: Build sdist + wheel
+        run: pipx run build
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
