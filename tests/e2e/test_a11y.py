@@ -9,7 +9,11 @@ page, which is the demo's concern; these run against the library chrome.
 from __future__ import annotations
 
 import pytest
-from axe_playwright_python.sync_playwright import Axe
+
+# Imported lazily via importorskip: the default `test` job installs only `.[test]` (no
+# axe) and still COLLECTS this module — a plain top-level import would break collection
+# there. Skipped when axe is absent, run in the e2e job where it is installed.
+Axe = pytest.importorskip("axe_playwright_python.sync_playwright").Axe
 
 pytestmark = pytest.mark.e2e
 
