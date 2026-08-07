@@ -26,6 +26,9 @@ says, "restore the original" is a row delete, and adding copy never needs a migr
 See the README for the hooks (`login_required`, `pages`, `base_template`, …).
 """
 
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _installed_version
+
 from sitecopy.extension import SiteCopy
 from sitecopy.registry import (
     DEFAULT_MAX_LENGTH,
@@ -61,7 +64,11 @@ from sitecopy.sanitizer import sanitize, strip_tags, visible_text
 from sitecopy.state import current_registry, current_state, current_store
 from sitecopy.storage import MemoryStore, SQLAlchemyStore, TextRow, TextStore
 
-__version__ = "0.1.0"
+# pyproject is the single source of truth; a literal here drifts from it silently.
+try:
+    __version__ = _installed_version("flask-sitecopy")
+except PackageNotFoundError:  # running from a source tree that was never installed
+    __version__ = "0.0.0.dev0"
 
 __all__ = [
     "DEFAULT_MAX_LENGTH",
