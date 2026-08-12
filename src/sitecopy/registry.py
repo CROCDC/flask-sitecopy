@@ -23,7 +23,7 @@ from dataclasses import dataclass, field as dataclass_field
 from datetime import datetime
 from typing import Literal
 
-FieldType = Literal["line", "text", "lines", "rich", "url"]
+FieldType = Literal["line", "text", "lines", "rich", "url", "image"]
 
 # Default cap per type. Long enough for real copy, short enough that a paste
 # accident can't push a 1MB blob into every page render.
@@ -33,6 +33,10 @@ DEFAULT_MAX_LENGTH: dict[str, int] = {
     "lines": 600,
     "rich": 12000,
     "url": 300,
+    # An image field stores the picture's URL, not the picture — a link or a path
+    # (`/static/hero.jpg`). Roomier than `url` because a real CDN link with signing
+    # query params runs long.
+    "image": 500,
 }
 
 
@@ -49,6 +53,12 @@ class TextField:
     | lines  | textarea | a list, one item per line    | bullet lists, marquees        |
     | rich   | textarea | allow-list sanitized HTML    | editorial/legal page bodies   |
     | url    | input    | validated http(s) link       | social and external links     |
+    | image  | input    | validated image URL/path     | photos, logos, hero images    |
+
+    An `image` field stores the picture's LOCATION (an https link or a site path like
+    `/static/hero.jpg`), never the bytes: rendering it is `<img src="{{ t('key') }}">`,
+    and editing it is pasting a new URL — no upload endpoint, no file storage, and the
+    same one-row-per-override model as every other field.
     """
 
     key: str

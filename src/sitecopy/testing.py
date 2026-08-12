@@ -23,7 +23,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from sitecopy.registry import Registry
-from sitecopy.sanitizer import sanitize
+from sitecopy.sanitizer import safe_image_src, sanitize
 
 # `t('key')` / `t_lines("key")` / `t_plain('key')` / `t_optional('key')` as written in
 # templates and in Python. The trailing `[,)]` is what keeps a runtime-built key
@@ -70,10 +70,17 @@ def check_registry(registry: Registry) -> list[str]:
                 f"{key}: the default ({len(field.default)} chars) does not fit its own "
                 f"max_length ({field.max_length})"
             )
-        if field.type in ("line", "url") and "\n" in field.default:
+        if field.type in ("line", "url", "image") and "\n" in field.default:
             problems.append(f"{key}: a {field.type} default cannot contain a newline")
         if field.type == "url" and not field.default.lower().startswith(("http://", "https://")):
             problems.append(f"{key}: a url default must be an absolute http(s) link")
+        if field.type == "image" and safe_image_src(field.default) is None:
+            # A default the render path would reject means the picture silently falls
+            # back to nothing (or to itself) the first time the page renders.
+            problems.append(
+                f"{key}: an image default must be an https link or a site path "
+                f"(not javascript:/data:/mailto:)"
+            )
         if field.type == "rich" and sanitize(field.default) != field.default:
             # Otherwise the site silently changes the first time someone saves the page
             # without editing it: the editor posts the sanitized value back.

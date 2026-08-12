@@ -30,7 +30,8 @@ worked example of the wiring in the main README:
 |-----------------------------------------------|---------------|
 | Click any heading, button or paragraph, type over it | click-to-edit visual editor |
 | The `<title>` / meta description in the side panel, not on the page | invisible-copy editing |
-| The photo's alt text, opened by clicking the image | attribute copy |
+| Click the hero photo, paste a new image URL — it swaps live | `image` field |
+| The photo's alt text, opened by clicking the same image | attribute copy |
 | "Los tres valores" edited as one-per-line      | `lines` field |
 | The Nosotros body with headings and bold       | `rich` (sanitized HTML) field |
 | The Instagram link                             | `url` field |

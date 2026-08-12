@@ -41,6 +41,7 @@ HOME = Group(
                     type="lines",
                 ),
                 TextField("home.hero.alt", "Texto de la foto", "Una foto"),
+                TextField("home.hero.image", "Foto de portada", "/static/hero.png", type="image"),
                 TextField("home.meta.title", "Título en Google", "{brand} · inicio"),
             ),
         ),
@@ -88,7 +89,7 @@ HOME_TEMPLATE = """<!doctype html>
 <h1>{{ t('home.hero.title') }}</h1>
 <p>{{ t('home.hero.body') }}</p>
 <ul>{% for item in t_lines('home.hero.bullets') %}<li>{{ item }}</li>{% endfor %}</ul>
-<img src="/x.png" alt="{{ t('home.hero.alt') }}">
+<img src="{{ t('home.hero.image') }}" alt="{{ t('home.hero.alt') }}">
 <a href="{{ t('global.site') }}">{{ t('global.tagline') }}</a>
 <script type="application/json">{"label": {{ t_plain('home.hero.title') | tojson }}}</script>
 </body></html>"""

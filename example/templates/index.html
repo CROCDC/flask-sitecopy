@@ -10,9 +10,10 @@
     <p class="lead">{{ t('home.hero.subtitle') }}</p>
     <a class="button" href="/producto/mochila-cactus">{{ t('home.hero.cta') }}</a>
   </div>
-  {# The alt text is invisible copy — clicking this image in the editor opens it in the
-     side panel. #}
-  <div class="hero-photo" role="img" aria-label="{{ t('home.hero.alt') }}">👜</div>
+  {# An `image` field: the src is editable copy, so clicking the picture in the editor
+     opens it in the side panel and a pasted URL swaps it live. The alt text is its own
+     (invisible) field right beside it. #}
+  <img class="hero-photo" src="{{ t('home.hero.image') }}" alt="{{ t('home.hero.alt') }}">
 </section>
 
 <section class="values">

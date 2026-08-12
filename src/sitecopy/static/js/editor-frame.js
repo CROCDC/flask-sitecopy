@@ -48,6 +48,17 @@
       .replace(/"/g, "&quot;");
   }
 
+  /** The subset of a value we're willing to put in an `<img src>` — the client-side
+   *  mirror of sanitizer.safe_image_src, so the canvas preview never tries to load a
+   *  `javascript:`/`data:` URL the server will reject anyway (browsers won't run it, but
+   *  it flashes a broken image and logs a scheme error). "" means "show no picture". */
+  function imageSrcSafe(value) {
+    var v = String(value == null ? "" : value).replace(/[\u0000-\u001f]/g, "").trim();
+    if (!v || /^(\/\/|\/\\|\\)/.test(v)) return "";
+    if (/^[a-z][a-z0-9+.-]*:/i.test(v)) return /^https?:/i.test(v) ? v : "";
+    return v; // a site path (root-relative or relative) or an in-page anchor
+  }
+
   /** `escaped` mirrors the server: inside a rich value a token is DATA, so it is
    *  escaped before splicing. Substituting raw and then assigning innerHTML made the
    *  canvas execute what the public page escapes. */
@@ -167,6 +178,30 @@
       else node.textContent = displayFor(target);
       if (CURRENT[key] !== field.raw) node.setAttribute("data-ct-dirty", "");
       else node.removeAttribute("data-ct-dirty");
+    });
+    updateImages(key);
+  }
+
+  /** An image field lands in an `<img src>` attribute, so it has no <ct-t> node to
+   *  refresh — but a picture change IS visual, so mirror the new URL onto the element
+   *  live. The key sits in data-ct-keys (recorded by editor_markup for attribute copy),
+   *  so an <img> whose src came from this field is `img[data-ct-keys~="key"]`. Setting
+   *  the attribute (not .src="") avoids reloading the page itself when the URL is blank.
+   */
+  function updateImages(key) {
+    if ((FIELDS[key] || {}).type !== "image") return;
+    const raw = String(CURRENT[key] == null ? "" : CURRENT[key]);
+    const src = imageSrcSafe(interpolate(raw));
+    document.querySelectorAll('img[data-ct-keys~="' + key + '"]').forEach((img) => {
+      if (src) {
+        if (img.getAttribute("src") !== src) img.setAttribute("src", src);
+      } else {
+        // Unsafe or empty: show no picture rather than flashing a broken one — the same
+        // value the server will refuse to publish.
+        img.removeAttribute("src");
+      }
+      if (raw !== ((FIELDS[key] || {}).raw || "")) img.setAttribute("data-ct-dirty", "");
+      else img.removeAttribute("data-ct-dirty");
     });
   }
 

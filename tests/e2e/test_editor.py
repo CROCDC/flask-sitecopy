@@ -156,6 +156,40 @@ def test_attribute_copy_opens_in_the_panel(editor):
     assert not editor.page.locator("[data-ed-panel]").is_hidden()
 
 
+def test_an_image_url_swaps_the_picture_live(editor):
+    """Clicking the hero <img> opens its `image` field in the panel; pasting a new URL
+    updates the picture on the canvas without a reload."""
+    photo = editor.canvas.locator(".hero-photo")
+    assert photo.get_attribute("src") == "/static/hero.svg"
+
+    photo.click()
+    editor.page.wait_for_timeout(400)
+    box = editor.field_input("home.hero.image")
+    box.fill("/static/other.svg")
+    editor.page.wait_for_timeout(300)
+
+    # The live picture followed the input, and the panel now shows a pending change.
+    assert photo.get_attribute("src") == "/static/other.svg"
+    assert "sin guardar" in editor.status().lower()
+
+
+def test_a_dangerous_image_url_shows_no_preview(editor):
+    """A javascript:/data: URL — which the server rejects — must not be loaded into any
+    src, so it shows no broken image and logs no scheme error. The picture just clears."""
+    photo = editor.canvas.locator(".hero-photo")
+    photo.click()
+    editor.page.wait_for_timeout(400)
+    box = editor.field_input("home.hero.image")
+    box.fill("javascript:alert(1)")
+    editor.page.wait_for_timeout(300)
+
+    # Neither the canvas image nor the panel thumbnail carries the dangerous value.
+    assert not (photo.get_attribute("src") or "").lower().startswith("javascript:")
+    thumb = editor.page.locator('[data-ed-field="home.hero.image"] .ed-image-preview')
+    assert not (thumb.get_attribute("src") or "").lower().startswith("javascript:")
+    assert not any("ERR_UNKNOWN_URL_SCHEME" in e for e in editor.console_errors)
+
+
 def test_keyboard_can_reach_and_open_an_editable(editor):
     node = editor.ct("home.hero.title")
     assert node.get_attribute("role") == "button"

@@ -34,6 +34,13 @@ HOME = Group(
                     type="text",
                 ),
                 TextField("home.hero.cta", "Botón", "Ver la colección"),
+                TextField(
+                    "home.hero.image",
+                    "Foto de portada",
+                    "/static/hero.svg",
+                    type="image",
+                    hint="Pegá el link de una imagen (https://…) o una ruta del sitio como /static/foto.jpg.",
+                ),
                 TextField("home.hero.alt", "Texto de la foto de portada", "Un bolso sobre una mesa de madera"),
             ),
         ),

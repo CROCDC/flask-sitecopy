@@ -203,6 +203,7 @@ external_content={
 | `lines` | textarea | a list, one item per line    | bullet lists, marquees               |
 | `rich`  | textarea | allow-list sanitized HTML    | editorial/legal page bodies          |
 | `url`   | input    | validated `http(s)` link     | social and external links            |
+| `image` | input    | validated image URL/path     | photos, logos, hero images           |
 
 `rich` accepts only `p h2 h3 ul ol li strong b em i a br`. Everything else is stripped
 (tags dropped, their text kept); `script`/`style`/`iframe`/`svg` are dropped *with*
@@ -210,6 +211,24 @@ their content. Rich values are sanitized on save **and** on render — the secon
 deliberate: a value that reached the table some other way (a restored backup, a manual
 `UPDATE`) must not be able to inject script into a public page. `url` values are
 re-checked on render for the same reason, falling back to the registry default.
+
+`image` stores the picture's **location**, not the picture — an `https://…` link or a
+site path like `/static/hero.jpg` — so it needs no upload endpoint and no file storage,
+and rides the same one-row-per-override model as every other field:
+
+```python
+TextField("home.hero.image", "Foto de portada", "/static/hero.jpg", type="image")
+```
+
+```jinja
+<img src="{{ t('home.hero.image') }}" alt="{{ t('home.hero.alt') }}">
+```
+
+The panel edits it as a URL with a live thumbnail; in the visual editor the picture
+itself is the click target, and pasting a new URL swaps it in place. Accepted values are
+absolute `http(s)` links and site paths (root-relative or relative); `javascript:`,
+`data:`, protocol-relative `//host` and bare `mailto:`/`tel:` are refused — on save and,
+like `url`, again on render, falling back to the registry default.
 
 ---
 
