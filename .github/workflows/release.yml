@@ -1,35 +1,97 @@
 name: Release
 
+# Every push to main is a potential release. The version in pyproject.toml is the
+# control: when it names a version that isn't tagged yet, this workflow builds it,
+# publishes to PyPI (trusted publishing — no stored secret), and creates the matching
+# git tag + GitHub Release. A push that doesn't bump the version finds its tag already
+# there and does nothing, so ordinary merges are safe and only a version bump ships.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+  # Lets a maintainer re-run a release from the Actions tab if a step was flaky.
+  workflow_dispatch:
+
+concurrency:
+  # Never cancel a release mid-publish; queue instead.
+  group: release-main
+  cancel-in-progress: false
 
 jobs:
-  publish:
-    name: build + publish to PyPI
+  test:
+    name: tests
     runs-on: ubuntu-latest
-    permissions:
-      # Trusted publishing: PyPI verifies this short-lived OIDC token instead of a
-      # stored API key, so there is no long-lived secret to leak or rotate.
-      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[test]"
+      - run: pytest --cov --cov-report=term-missing --cov-fail-under=94
 
-      - name: Tag must match the version in pyproject
-        # A tag that drifted from the packaged version is what left v0.1.0 pointing at
-        # stale code. Fail the release rather than publish a version nobody reviewed.
+  release:
+    name: build + publish to PyPI
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      # Trusted publishing: PyPI verifies this short-lived OIDC token instead of a
+      # stored API key, so there is no long-lived secret to leak or rotate.
+      id-token: write
+      # Create the tag and the GitHub Release from inside the run.
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # need the tags to know what has already shipped
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Decide whether this version is a new release
+        id: v
         run: |
-          tag="${GITHUB_REF_NAME#v}"
-          pkg=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
-          if [ "$tag" != "$pkg" ]; then
-            echo "tag ${GITHUB_REF_NAME} declares $tag but pyproject says $pkg"
-            exit 1
+          version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git rev-parse "v$version" >/dev/null 2>&1; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::v$version is already tagged — nothing to release."
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Releasing v$version."
           fi
 
       - name: Build sdist + wheel
+        if: steps.v.outputs.release == 'true'
         run: pipx run build
 
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - name: Publish to PyPI
+        if: steps.v.outputs.release == 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # Belt and braces: if the version somehow already exists on PyPI, skip instead
+          # of failing, so the tag/release steps below can still catch up.
+          skip-existing: true
+
+      - name: Extract this version's changelog section
+        if: steps.v.outputs.release == 'true'
+        run: |
+          python - "$VERSION" <<'PY' > RELEASE_NOTES.md
+          import re, sys, pathlib
+          version = sys.argv[1]
+          text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          m = re.search(r"^## \[%s\].*?(?=^## \[|\Z)" % re.escape(version), text, re.M | re.S)
+          print(m.group(0).strip() if m else f"Release {version}")
+          PY
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+
+      - name: Tag and create the GitHub Release
+        if: steps.v.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
+          gh release create "v$VERSION" --title "v$VERSION" --notes-file RELEASE_NOTES.md
