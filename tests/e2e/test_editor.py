@@ -173,6 +173,47 @@ def test_an_image_url_swaps_the_picture_live(editor):
     assert "sin guardar" in editor.status().lower()
 
 
+def test_uploading_a_file_swaps_the_picture_and_records_a_version(editor, tmp_path):
+    """Click the photo → upload a real image → the field, the preview and the canvas all
+    point at the stored file, and the version gallery offers the original to roll back."""
+    png = tmp_path / "up.png"
+    png.write_bytes(
+        bytes.fromhex(
+            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+            "0000000a49444154789c6360000002000100"
+        )
+    )
+    photo = editor.canvas.locator(".hero-photo")
+    photo.click()
+    editor.page.wait_for_timeout(400)
+    field = editor.page.locator('[data-ed-field="home.hero.image"]')
+    assert field.locator("button", has_text="Subir una imagen").count() == 1
+
+    field.locator('input[type="file"]').set_input_files(str(png))
+    editor.page.wait_for_timeout(1000)
+
+    value = editor.field_input("home.hero.image").input_value()
+    assert "/static/sitecopy-uploads/" in value
+    assert "/static/sitecopy-uploads/" in (photo.get_attribute("src") or "")
+
+    # Publish it, then the gallery lists both the uploaded file and the "Original".
+    editor.page.on("dialog", lambda d: d.accept())
+    editor.page.locator("[data-ed-publish]").click()
+    editor.page.wait_for_timeout(1200)
+    field.locator("button", has_text="Ver versiones anteriores").click()
+    editor.page.wait_for_timeout(700)
+    assert field.locator(".ed-media-thumb").count() >= 2  # uploaded + Original
+
+
+def test_the_media_chip_appears_over_the_picture(editor):
+    """The 'icon on every image' — a floating change button on hover."""
+    editor.canvas.locator(".hero-photo").hover()
+    editor.page.wait_for_timeout(300)
+    chip = editor.canvas.locator(".ct-media-chip")
+    assert chip.count() == 1 and chip.is_visible()
+    assert "Cambiar" in chip.inner_text()
+
+
 def test_a_dangerous_image_url_shows_no_preview(editor):
     """A javascript:/data: URL — which the server rejects — must not be loaded into any
     src, so it shows no broken image and logs no scheme error. The picture just clears."""
@@ -185,7 +226,7 @@ def test_a_dangerous_image_url_shows_no_preview(editor):
 
     # Neither the canvas image nor the panel thumbnail carries the dangerous value.
     assert not (photo.get_attribute("src") or "").lower().startswith("javascript:")
-    thumb = editor.page.locator('[data-ed-field="home.hero.image"] .ed-image-preview')
+    thumb = editor.page.locator('[data-ed-field="home.hero.image"] .ed-media-preview')
     assert not (thumb.get_attribute("src") or "").lower().startswith("javascript:")
     assert not any("ERR_UNKNOWN_URL_SCHEME" in e for e in editor.console_errors)
 

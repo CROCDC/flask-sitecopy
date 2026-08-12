@@ -78,13 +78,13 @@ def safe_href(raw: str | None) -> str | None:
     return value if head.lower() in SAFE_SCHEMES else None
 
 
-def safe_image_src(raw: str | None) -> str | None:
-    """Return `raw` if it is something we're willing to put in an `<img src>`, else None.
+def safe_media_src(raw: str | None) -> str | None:
+    """Return `raw` if it is something we're willing to put in an `<img>`/`<video>` src.
 
-    An image field holds the picture's location, so it accepts what `safe_href` does —
+    A media field holds the file's location, so it accepts what `safe_href` does —
     absolute http(s), root-relative and relative paths — MINUS `mailto:`/`tel:`, which
-    are valid links but never a picture, and would just render as a broken image if
-    someone pasted one by mistake. `data:` and `javascript:` are already rejected by
+    are valid links but never a picture or a clip, and would just render as broken media
+    if someone pasted one by mistake. `data:` and `javascript:` are already rejected by
     `safe_href` (they are not in SAFE_SCHEMES), so a stored `javascript:` URL can never
     reach an `src` attribute even if it lands in the table some other way."""
     cleaned = safe_href(raw)
@@ -93,6 +93,11 @@ def safe_image_src(raw: str | None) -> str | None:
     if cleaned.lower().startswith(("mailto:", "tel:")):
         return None
     return cleaned
+
+
+# The image field predates video; keep the old name pointing at the shared guard so any
+# host or test that imported it still works.
+safe_image_src = safe_media_src
 
 
 def _looks_like_prose(tag_text: str | None) -> bool:

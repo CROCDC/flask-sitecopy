@@ -4,6 +4,42 @@ All notable changes to **flask-sitecopy** are documented here. The format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [0.4.0] — 2026-08-12
+
+### Added
+
+- **`video` field type.** The `image` idea for a clip: stores the file's location,
+  renders as `<video src="{{ t('key') }}">`, and validates and rolls back exactly like
+  `image`.
+
+- **Uploads.** With a **`FileStore`** wired, the editor can upload an image or video
+  straight from the panel (and the visual editor, via a **“✎ Cambiar”** chip on the media
+  itself) instead of pasting a URL. `LocalFileStore` is the batteries-included default
+  when the app serves a static folder — uploads land under `<static>/sitecopy-uploads`,
+  content-addressed so a re-upload is idempotent. Plug in any backend (S3, Cloudinary, …)
+  by passing `files=<a FileStore>`; `files=False` turns uploads off.
+
+  Uploads are validated by **sniffing the real content type from the bytes**, never the
+  filename, so an HTML polyglot renamed `logo.png` is refused. Only `png/jpg/webp/gif` and
+  `mp4/webm` are accepted, each under a per-kind size cap (`upload_max_bytes=`).
+
+- **Media version history.** Publishing a media field remembers its URL, so the panel's
+  **version gallery** can roll a picture or clip back to any earlier one (the code default
+  is always offered as *“Original”*). History rides the same `db` as the copy; pass
+  `media_store=` for a custom backend.
+
+### Changed
+
+- The `image` render/validation path generalised to cover both media types; the old
+  `sanitizer.safe_image_src` is kept as an alias of the new `safe_media_src`.
+
+### Notes for upgraders
+
+- Fully backwards-compatible: no existing behaviour changes, and uploads/versioning are
+  opt-in-by-default (they light up only where the app can serve a static folder or you
+  pass a store). New public API: `FileStore`, `LocalFileStore`, `MediaVersionStore`,
+  `MemoryMediaVersionStore`, `SQLAlchemyMediaVersionStore`, `MediaVersion`, `MEDIA_TYPES`.
+
 ## [0.3.0] — 2026-08-12
 
 ### Added
@@ -54,6 +90,7 @@ Earlier release — see the [git history](https://github.com/CROCDC/flask-siteco
 
 First tagged release.
 
+[0.4.0]: https://github.com/CROCDC/flask-sitecopy/releases/tag/v0.4.0
 [0.3.0]: https://github.com/CROCDC/flask-sitecopy/releases/tag/v0.3.0
 [0.2.0]: https://github.com/CROCDC/flask-sitecopy/releases/tag/v0.2.0
 [0.1.0]: https://github.com/CROCDC/flask-sitecopy/releases/tag/v0.1.0

@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 from flask import current_app, has_app_context
 
 if TYPE_CHECKING:  # pragma: no cover — import cycle at runtime, fine for type checkers
+    from sitecopy.media import FileStore, MediaVersionStore
     from sitecopy.registry import Registry
     from sitecopy.storage import TextStore
 
@@ -50,6 +51,13 @@ class SiteCopyState:
     # Set when the bundled shared-password auth is in use, so the chrome can offer a
     # way out and the login route exists.
     owns_auth: bool = False
+    # Where uploaded image/video bytes go, and the history of URLs each media field has
+    # pointed at. Both optional: with no FileStore the editor still edits media by URL,
+    # and with a no-op version store the gallery is simply empty.
+    file_store: "FileStore | None" = None
+    media_versions: "MediaVersionStore | None" = None
+    # Per-kind upload size caps, in bytes.
+    upload_max_bytes: dict[str, int] = field(default_factory=dict)
 
 
 def current_state() -> SiteCopyState:
@@ -74,3 +82,11 @@ def current_registry() -> "Registry":
 
 def current_store() -> "TextStore":
     return current_state().store
+
+
+def current_file_store() -> "FileStore | None":
+    return current_state().file_store
+
+
+def current_media_versions() -> "MediaVersionStore | None":
+    return current_state().media_versions

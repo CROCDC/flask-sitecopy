@@ -38,8 +38,18 @@ _OPTIONS = frozenset(
         "external_content",
         "nav",
         "jinja_globals",
+        # Media (image/video) uploads and version history — all optional.
+        "files",
+        "media_store",
+        "upload_max_bytes",
     }
 )
+
+# Per-kind upload caps if the host sets none. A picture is small; a clip is not.
+DEFAULT_UPLOAD_MAX_BYTES: dict[str, int] = {
+    "image": 8 * 1024 * 1024,  # 8 MB
+    "video": 128 * 1024 * 1024,  # 128 MB
+}
 
 
 class SiteCopy:
@@ -83,15 +93,18 @@ class SiteCopy:
         if registry is None:
             raise ValueError("SiteCopy needs a registry: SiteCopy(app, registry=REGISTRY)")
 
+        db = options.get("db")
         store: TextStore | None = options.get("store")
         if store is None:
-            db = options.get("db")
             if db is None:
                 raise ValueError(
                     "SiteCopy needs somewhere to store the overrides: pass db=<your "
                     "Flask-SQLAlchemy instance>, or store=<a TextStore>."
                 )
             store = SQLAlchemyStore(db, table_name=options.get("table_name") or "site_texts")
+
+        file_store, media_versions = _build_media(app, options, db)
+        upload_max_bytes = {**DEFAULT_UPLOAD_MAX_BYTES, **(options.get("upload_max_bytes") or {})}
 
         if options.get("password") is not None:
             app.config["SITECOPY_PASSWORD"] = options["password"]
@@ -134,6 +147,9 @@ class SiteCopy:
             external_content=options.get("external_content"),
             nav=list(options.get("nav") or ()),
             owns_auth=owns_auth,
+            file_store=file_store,
+            media_versions=media_versions,
+            upload_max_bytes=upload_max_bytes,
         )
 
         app.extensions[EXTENSION_KEY] = state
@@ -149,11 +165,65 @@ class SiteCopy:
 
     @staticmethod
     def ensure_schema(app: Flask | None = None) -> None:
-        """Create (or repair) the overrides table. Call it where you create your tables."""
+        """Create (or repair) the overrides table (and the media-versions table, if any).
+
+        Call it where you create your tables."""
         if app is None:
-            from sitecopy.state import current_store
+            from sitecopy.state import current_media_versions, current_store
 
             current_store().ensure_schema()
+            versions = current_media_versions()
+            if versions is not None:
+                versions.ensure_schema()
             return
         with app.app_context():
-            app.extensions[EXTENSION_KEY].store.ensure_schema()
+            state = app.extensions[EXTENSION_KEY]
+            state.store.ensure_schema()
+            if state.media_versions is not None:
+                state.media_versions.ensure_schema()
+
+
+def _build_media(
+    app: Flask, options: dict[str, Any], db: Any
+) -> tuple[Any, Any]:
+    """Resolve the (FileStore, MediaVersionStore) for this install.
+
+    Both are optional and both have a sensible default:
+
+    - `files=` overrides the FileStore. Otherwise, if the app serves static files, a
+      `LocalFileStore` writes uploads under ``<static>/sitecopy-uploads`` and serves them
+      from there. Pass ``files=False`` to turn uploads off (edit media by URL only). With
+      no static folder there is nowhere to put them, so uploads are simply disabled.
+    - `media_store=` overrides the version store. Otherwise it rides the same `db` as the
+      copy (or an in-memory store when there is no db), so rollback history persists
+      wherever the overrides do.
+    """
+    from sitecopy.media import (
+        LocalFileStore,
+        MemoryMediaVersionStore,
+        SQLAlchemyMediaVersionStore,
+    )
+
+    files_opt = options.get("files", None)
+    if files_opt is False:
+        file_store: Any = None
+    elif files_opt is not None:
+        file_store = files_opt
+    elif app.static_folder:
+        import os
+
+        directory = os.path.join(app.static_folder, "sitecopy-uploads")
+        base_url = f"{(app.static_url_path or '/static').rstrip('/')}/sitecopy-uploads"
+        file_store = LocalFileStore(directory, base_url)
+    else:
+        file_store = None
+
+    media_opt = options.get("media_store", None)
+    if media_opt is not None:
+        media_versions: Any = media_opt
+    elif db is not None:
+        media_versions = SQLAlchemyMediaVersionStore(db)
+    else:
+        media_versions = MemoryMediaVersionStore()
+
+    return file_store, media_versions
