@@ -453,9 +453,11 @@
       count.classList.toggle("is-over", input.value.length > field.max);
       if (preview) {
         const url = input.value.trim();
-        // Dropping the attribute (not src="") avoids reloading the admin page itself as
-        // the image; the load/error handlers flip `hidden` to match.
-        if (url) preview.src = url;
+        // Only preview what could actually be saved: safeHref is false for
+        // javascript:/data:/protocol-relative URLs, exactly what the server rejects, so
+        // a bad value shows no thumbnail instead of a broken image. Dropping the
+        // attribute (not src="") avoids reloading the admin page itself as the image.
+        if (url && safeHref(url)) preview.src = url;
         else { preview.removeAttribute("src"); preview.hidden = true; }
       }
       const dirty = key in pending;

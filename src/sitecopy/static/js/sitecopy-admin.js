@@ -29,14 +29,23 @@
     });
 
     // --- image previews follow the URL as it is typed ---
+    // Only preview what the server would accept: reject javascript:/data:/vbscript:,
+    // protocol-relative //host and backslash tricks, so a bad value shows no thumbnail
+    // rather than a broken image (and logs no scheme error). Mirrors safe_image_src.
+    const imageSrcSafe = (raw) => {
+      const v = String(raw || "").replace(/[\u0000-\u001f]/g, "").trim();
+      if (!v || /^(\/\/|\/\\|\\)/.test(v)) return "";
+      if (/^[a-z][a-z0-9+.-]*:/i.test(v)) return /^https?:/i.test(v) ? v : "";
+      return v; // a site path or an in-page anchor
+    };
     form.querySelectorAll("[data-ct-image-input]").forEach((input) => {
       const preview = document.getElementById(input.getAttribute("aria-controls"));
       if (!preview) return;
       input.addEventListener("input", () => {
-        const value = input.value.trim();
+        const src = imageSrcSafe(input.value);
         // Setting src="" would reload the current page as the image; drop the attribute
         // instead, which is also what onerror does for a broken URL.
-        if (value) preview.src = value;
+        if (src) preview.src = src;
         else preview.removeAttribute("src");
       });
     });
