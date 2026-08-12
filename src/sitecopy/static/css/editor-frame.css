@@ -192,6 +192,23 @@ img[data-ct-keys][data-ct-dirty] {
 /* Inline/void elements can't host the badge; their keys are still in the panel. */
 head [data-ct-keys]::after, meta[data-ct-keys]::after, link[data-ct-keys]::after { content: none; }
 
+/* ---------- "change this media" chip ---------- */
+/* A floating button over an image/video on the canvas: the visible "you can swap or
+   upload one here" affordance a replaced element can't carry as a ::after badge. */
+.ct-media-chip {
+    position: absolute;
+    z-index: 2147483500;
+    font: 600 13px/1 system-ui, sans-serif;
+    color: #fff;
+    background: #b56a3a;
+    border: none;
+    border-radius: 999px;
+    padding: 7px 12px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.ct-media-chip:hover, .ct-media-chip:focus-visible { background: #9a5730; outline: none; }
+
 /* ---------- hint bubble ---------- */
 .ct-tip {
     position: absolute;

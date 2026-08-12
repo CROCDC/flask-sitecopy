@@ -179,29 +179,31 @@
       if (CURRENT[key] !== field.raw) node.setAttribute("data-ct-dirty", "");
       else node.removeAttribute("data-ct-dirty");
     });
-    updateImages(key);
+    updateMedia(key);
   }
 
-  /** An image field lands in an `<img src>` attribute, so it has no <ct-t> node to
-   *  refresh — but a picture change IS visual, so mirror the new URL onto the element
-   *  live. The key sits in data-ct-keys (recorded by editor_markup for attribute copy),
-   *  so an <img> whose src came from this field is `img[data-ct-keys~="key"]`. Setting
-   *  the attribute (not .src="") avoids reloading the page itself when the URL is blank.
-   */
-  function updateImages(key) {
-    if ((FIELDS[key] || {}).type !== "image") return;
+  /** An image/video field lands in a `src` attribute, so it has no <ct-t> node to
+   *  refresh — but a media change IS visual, so mirror the new URL onto the element live.
+   *  The key sits in data-ct-keys (recorded by editor_markup for attribute copy), so an
+   *  <img>/<video> whose src came from this field is `[data-ct-keys~="key"]`. Setting the
+   *  attribute (not .src="") avoids reloading the page itself when the URL is blank. */
+  function updateMedia(key) {
+    if (["image", "video"].indexOf((FIELDS[key] || {}).type) === -1) return;
     const raw = String(CURRENT[key] == null ? "" : CURRENT[key]);
     const src = imageSrcSafe(interpolate(raw));
-    document.querySelectorAll('img[data-ct-keys~="' + key + '"]').forEach((img) => {
+    document.querySelectorAll('img[data-ct-keys~="' + key + '"], video[data-ct-keys~="' + key + '"]').forEach((el) => {
       if (src) {
-        if (img.getAttribute("src") !== src) img.setAttribute("src", src);
+        if (el.getAttribute("src") !== src) {
+          el.setAttribute("src", src);
+          if (el.tagName === "VIDEO" && el.load) el.load();  // pick up the new source
+        }
       } else {
-        // Unsafe or empty: show no picture rather than flashing a broken one — the same
+        // Unsafe or empty: show nothing rather than flashing broken media — the same
         // value the server will refuse to publish.
-        img.removeAttribute("src");
+        el.removeAttribute("src");
       }
-      if (raw !== ((FIELDS[key] || {}).raw || "")) img.setAttribute("data-ct-dirty", "");
-      else img.removeAttribute("data-ct-dirty");
+      if (raw !== ((FIELDS[key] || {}).raw || "")) el.setAttribute("data-ct-dirty", "");
+      else el.removeAttribute("data-ct-dirty");
     });
   }
 
@@ -579,6 +581,9 @@
   document.addEventListener(
     "click",
     (event) => {
+      // The media chip is our own overlay button; let its own handler (openKeys) run
+      // without the "this text is not editable" tip firing on it first.
+      if (event.target.closest && event.target.closest(".ct-media-chip")) return;
       const node = event.target.closest ? event.target.closest("ct-t") : null;
       if (node) {
         clickPoint = { x: event.clientX, y: event.clientY };
@@ -798,6 +803,80 @@
       node.setAttribute("tabindex", "0");
       node.setAttribute("role", "button");
       node.setAttribute("aria-label", "Editar los textos de este elemento");
+    });
+    setupMediaChips();
+  }
+
+  /* ---------------- "change this picture/video" chip ---------------- */
+  //
+  // A replaced element (img/video) can't host a ::after badge, so a media field on the
+  // canvas gets a floating button on hover/focus that opens its panel — the "icon on the
+  // image" that makes it obvious you can swap or upload one right there.
+
+  let mediaChip = null;
+  let mediaChipFor = null;
+  let mediaChipHideTimer = null;
+
+  function mediaKeyOf(el) {
+    const raw = el.getAttribute("data-ct-keys");
+    if (!raw) return null;
+    const keys = raw.split(/\s+/);
+    for (let i = 0; i < keys.length; i++) {
+      const type = (FIELDS[keys[i]] || {}).type;
+      if (type === "image" || type === "video") return keys[i];
+    }
+    return null;
+  }
+
+  function ensureMediaChip() {
+    if (mediaChip) return mediaChip;
+    mediaChip = document.createElement("button");
+    mediaChip.type = "button";
+    mediaChip.className = "ct-media-chip";
+    mediaChip.hidden = true;
+    mediaChip.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (mediaChipFor) post({ type: "openKeys", keys: [mediaChipFor] });
+    });
+    mediaChip.addEventListener("mouseenter", () => {
+      if (mediaChipHideTimer) window.clearTimeout(mediaChipHideTimer);
+    });
+    mediaChip.addEventListener("mouseleave", hideMediaChip);
+    document.body.appendChild(mediaChip);
+    return mediaChip;
+  }
+
+  function showMediaChip(el, key) {
+    const chip = ensureMediaChip();
+    mediaChipFor = key;
+    chip.textContent =
+      (FIELDS[key] || {}).type === "video" ? "✎ Cambiar video" : "✎ Cambiar imagen";
+    const box = el.getBoundingClientRect();
+    chip.style.top = box.top + window.scrollY + 8 + "px";
+    chip.style.left = box.left + window.scrollX + 8 + "px";
+    chip.hidden = false;
+    if (mediaChipHideTimer) window.clearTimeout(mediaChipHideTimer);
+  }
+
+  function hideMediaChip() {
+    // A short grace period so moving the cursor from the image onto the chip doesn't
+    // dismiss it mid-hop.
+    mediaChipHideTimer = window.setTimeout(() => {
+      if (mediaChip) mediaChip.hidden = true;
+      mediaChipFor = null;
+    }, 140);
+  }
+
+  function setupMediaChips() {
+    document.querySelectorAll("img[data-ct-keys], video[data-ct-keys]").forEach((el) => {
+      const key = mediaKeyOf(el);
+      if (!key || el.dataset.ctMediaChip) return;
+      el.dataset.ctMediaChip = "1";  // wire each element once, even across re-scans
+      el.addEventListener("mouseenter", () => showMediaChip(el, key));
+      el.addEventListener("mouseleave", hideMediaChip);
+      el.addEventListener("focus", () => showMediaChip(el, key));
+      el.addEventListener("blur", hideMediaChip);
     });
   }
 

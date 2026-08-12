@@ -23,7 +23,11 @@ from dataclasses import dataclass, field as dataclass_field
 from datetime import datetime
 from typing import Literal
 
-FieldType = Literal["line", "text", "lines", "rich", "url", "image"]
+FieldType = Literal["line", "text", "lines", "rich", "url", "image", "video"]
+
+# Field types whose value is a media URL/path: same validation and editor (upload +
+# version history), different element (`<img>` vs `<video>`).
+MEDIA_TYPES = ("image", "video")
 
 # Default cap per type. Long enough for real copy, short enough that a paste
 # accident can't push a 1MB blob into every page render.
@@ -37,6 +41,8 @@ DEFAULT_MAX_LENGTH: dict[str, int] = {
     # (`/static/hero.jpg`). Roomier than `url` because a real CDN link with signing
     # query params runs long.
     "image": 500,
+    # A video field is the same idea for a clip: it stores the URL/path, not the file.
+    "video": 500,
 }
 
 
@@ -54,11 +60,14 @@ class TextField:
     | rich   | textarea | allow-list sanitized HTML    | editorial/legal page bodies   |
     | url    | input    | validated http(s) link       | social and external links     |
     | image  | input    | validated image URL/path     | photos, logos, hero images    |
+    | video  | input    | validated video URL/path     | hero clips, product videos    |
 
-    An `image` field stores the picture's LOCATION (an https link or a site path like
-    `/static/hero.jpg`), never the bytes: rendering it is `<img src="{{ t('key') }}">`,
-    and editing it is pasting a new URL — no upload endpoint, no file storage, and the
-    same one-row-per-override model as every other field.
+    An `image`/`video` field stores the file's LOCATION (an https link or a site path
+    like `/static/hero.jpg`), never the bytes: rendering it is `<img src="{{ t('key') }}">`
+    or `<video src="{{ t('key') }}">`, and editing it is pasting a new URL — or, when the
+    host wires a `FileStore`, uploading a file from the editor. Either way it stays on the
+    same one-row-per-override model as every other field, with version history for
+    rolling back to an earlier file.
     """
 
     key: str

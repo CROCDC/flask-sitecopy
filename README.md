@@ -28,8 +28,8 @@ text on the page and type over it. Adding new copy later is one `TextField` plus
 
 ## Try it
 
-A complete little site lives in [`example/`](example/). It touches every field type,
-tokens, `external_content` and the draft/publish flow:
+A complete little site lives in [`example/`](example/). It touches the field types,
+tokens, media uploads with version history, `external_content` and the draft/publish flow:
 
 ```bash
 python -m venv .venv && . .venv/bin/activate   # see the note below
@@ -204,6 +204,7 @@ external_content={
 | `rich`  | textarea | allow-list sanitized HTML    | editorial/legal page bodies          |
 | `url`   | input    | validated `http(s)` link     | social and external links            |
 | `image` | input    | validated image URL/path     | photos, logos, hero images           |
+| `video` | input    | validated video URL/path     | hero clips, product videos           |
 
 `rich` accepts only `p h2 h3 ul ol li strong b em i a br`. Everything else is stripped
 (tags dropped, their text kept); `script`/`style`/`iframe`/`svg` are dropped *with*
@@ -212,23 +213,53 @@ deliberate: a value that reached the table some other way (a restored backup, a 
 `UPDATE`) must not be able to inject script into a public page. `url` values are
 re-checked on render for the same reason, falling back to the registry default.
 
-`image` stores the picture's **location**, not the picture — an `https://…` link or a
-site path like `/static/hero.jpg` — so it needs no upload endpoint and no file storage,
-and rides the same one-row-per-override model as every other field:
+`image` and `video` store the file's **location**, not the bytes — an `https://…` link
+or a site path like `/static/hero.jpg` — so they ride the same one-row-per-override model
+as every other field:
 
 ```python
 TextField("home.hero.image", "Foto de portada", "/static/hero.jpg", type="image")
+TextField("home.hero.clip",  "Video de portada", "/static/hero.mp4", type="video")
 ```
 
 ```jinja
-<img src="{{ t('home.hero.image') }}" alt="{{ t('home.hero.alt') }}">
+<img   src="{{ t('home.hero.image') }}" alt="{{ t('home.hero.alt') }}">
+<video src="{{ t('home.hero.clip') }}" controls></video>
 ```
 
-The panel edits it as a URL with a live thumbnail; in the visual editor the picture
-itself is the click target, and pasting a new URL swaps it in place. Accepted values are
-absolute `http(s)` links and site paths (root-relative or relative); `javascript:`,
-`data:`, protocol-relative `//host` and bare `mailto:`/`tel:` are refused — on save and,
-like `url`, again on render, falling back to the registry default.
+The panel edits either as a URL with a live preview; in the visual editor the picture or
+clip itself is the click target (with a **“✎ Cambiar”** chip), and pasting a new URL
+swaps it in place. Accepted values are absolute `http(s)` links and site paths
+(root-relative or relative); `javascript:`, `data:`, protocol-relative `//host` and bare
+`mailto:`/`tel:` are refused — on save and, like `url`, again on render, falling back to
+the registry default.
+
+### Uploads and version history
+
+Wire a **`FileStore`** and the editor can upload a file straight from the panel instead of
+pasting a URL — the value it stores is still just the file's location. If your app serves
+a static folder, uploads work with **zero config**: a `LocalFileStore` writes them under
+`<static>/sitecopy-uploads` (content-addressed, so a re-upload is idempotent). Point it
+elsewhere, cap the size, or plug in S3/Cloudinary by passing your own:
+
+```python
+from sitecopy import SiteCopy, LocalFileStore
+
+SiteCopy(
+    app, registry=REGISTRY, db=db,
+    files=LocalFileStore("/var/www/uploads", "/uploads"),   # or files=False to disable
+    upload_max_bytes={"image": 8_000_000, "video": 128_000_000},
+)
+```
+
+Uploads are validated by **sniffing the real content type from the bytes** (never the
+filename), so an HTML polyglot renamed `logo.png` is refused; only `png/jpg/webp/gif` and
+`mp4/webm` are accepted, each under its size cap.
+
+Every time a media field is **published**, its URL is remembered, so the panel's
+**version gallery** can roll the picture or clip back to any earlier one (the code default
+is always offered as *“Original”*). History rides the same `db` as the copy; pass a custom
+`media_store` to change that.
 
 ---
 

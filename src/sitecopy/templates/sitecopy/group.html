@@ -32,7 +32,8 @@
 </div>
 
 <form method="post" action="{{ url_for(sitecopy_bp ~ '.group_save', group_key=group.key) }}"
-      class="adm-form ct-form" id="contentForm">
+      class="adm-form ct-form" id="contentForm"
+      data-upload-url="{{ url_for(sitecopy_bp ~ '.upload') }}">
     <input type="hidden" name="_sitecopy_csrf" value="{{ sitecopy_csrf }}">
     {% for sec in group.sections %}
     <section class="ct-section" data-ct-section>
@@ -73,21 +74,36 @@
                       {% if describedby %}aria-describedby="{{ describedby }}"{% endif %}
                       class="ct-input ct-input-{{ f.type }}">{{ st.value }}</textarea>
             {% else %}
-            <input type="{{ 'url' if f.type in ('url', 'image') else 'text' }}"
+            {% set is_media = f.type in ('image', 'video') %}
+            <input type="{{ 'url' if f.type in ('url', 'image', 'video') else 'text' }}"
                    id="fld-{{ loop.index0 }}-{{ sec.key }}" name="{{ f.key }}"
                    value="{{ st.value }}" maxlength="{{ f.max_length }}"
                    {% if invalid %}aria-invalid="true"{% endif %}
                    {% if describedby %}aria-describedby="{{ describedby }}"{% endif %}
-                   {% if f.type == 'image' %}data-ct-image-input aria-controls="prev-{{ f.key }}"{% endif %}
+                   {% if is_media %}data-ct-media-input data-ct-media-kind="{{ f.type }}"
+                   data-ct-field-key="{{ f.key }}" aria-controls="prev-{{ f.key }}"{% endif %}
                    data-ct-input class="ct-input">
-            {% if f.type == 'image' %}
-            {# A thumbnail of what the URL points at, so the operator sees the picture and
-               not just a path. src set from the current value; JS keeps it in step as
-               they type. Hidden until it loads, so a blank or broken URL shows no frame. #}
-            <img class="ct-image-preview" id="prev-{{ f.key }}" alt=""
-                 data-ct-image-preview src="{{ st.value }}"
-                 {% if not st.value %}hidden{% endif %}
-                 onload="this.hidden=false" onerror="this.hidden=true">
+            {% if is_media %}
+            {# A preview of what the URL points at, so the operator sees the picture/clip
+               and not just a path. JS keeps it in step as they type. A button lets them
+               upload a file instead of pasting a URL (progressive enhancement: shown by
+               JS only, since it posts via fetch). #}
+            <div class="ct-media-row" data-ct-media-row>
+                {% if f.type == 'video' %}
+                <video class="ct-media-preview" id="prev-{{ f.key }}" data-ct-media-preview
+                       src="{{ st.value }}" controls muted preload="metadata"
+                       {% if not st.value %}hidden{% endif %}
+                       onloadeddata="this.hidden=false" onerror="this.hidden=true"></video>
+                {% else %}
+                <img class="ct-media-preview" id="prev-{{ f.key }}" alt=""
+                     data-ct-media-preview src="{{ st.value }}"
+                     {% if not st.value %}hidden{% endif %}
+                     onload="this.hidden=false" onerror="this.hidden=true">
+                {% endif %}
+                <button type="button" class="ct-media-upload" data-ct-media-upload hidden>
+                    {{ 'Subir un video' if f.type == 'video' else 'Subir una imagen' }}
+                </button>
+            </div>
             {% endif %}
             {% endif %}
 

@@ -108,14 +108,23 @@
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
     font-size: 0.92rem; line-height: 1.55;
 }
-/* A thumbnail of what an image field's URL points at. Bounded so a large picture can't
-   push the whole form around, on a checkered ground so a transparent PNG still reads. */
-.ct-image-preview {
-    margin-top: 0.6rem; max-width: 220px; max-height: 150px;
+/* A preview of what a media field's URL points at. Bounded so a large file can't push
+   the whole form around, on a checkered ground so a transparent PNG still reads. */
+.ct-media-row { margin-top: 0.6rem; display: flex; align-items: flex-start; gap: 0.7rem; flex-wrap: wrap; }
+.ct-media-preview {
+    max-width: 220px; max-height: 150px;
     border: 1px solid var(--adm-input-line); border-radius: 10px;
     object-fit: contain; background:
         conic-gradient(#0000 90deg, rgba(0,0,0,.05) 0 180deg, #0000 0 270deg, rgba(0,0,0,.05) 0) 0 0 / 18px 18px;
 }
+video.ct-media-preview { max-width: 280px; }
+.ct-media-upload {
+    font: inherit; font-size: 0.85rem; cursor: pointer; align-self: center;
+    color: var(--adm-ink); background: var(--adm-card);
+    border: 1px solid var(--adm-input-line); border-radius: 10px; padding: 0.5rem 0.85rem;
+}
+.ct-media-upload:hover { border-color: var(--adm-accent); color: var(--adm-accent); }
+.ct-media-upload:disabled { opacity: 0.6; cursor: default; }
 .ct-field.is-draft { border-left: 3px solid var(--adm-accent); padding-left: 0.7rem; margin-left: -0.7rem; }
 .ct-field.is-edited .ct-input { border-color: rgba(46, 125, 82, 0.35); }
 .ct-field.is-invalid { border-left: 3px solid var(--adm-err); padding-left: 0.7rem; margin-left: -0.7rem; }

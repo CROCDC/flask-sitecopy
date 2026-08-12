@@ -12,6 +12,8 @@ htmlcov/
 .DS_Store
 instance/
 example/instance/
+# Uploaded media (LocalFileStore default location)
+**/static/sitecopy-uploads/
 
 # mutation testing scratch
 mutants/

@@ -28,26 +28,78 @@
       render();
     });
 
-    // --- image previews follow the URL as it is typed ---
+    // --- media (image/video) previews + upload ---
     // Only preview what the server would accept: reject javascript:/data:/vbscript:,
     // protocol-relative //host and backslash tricks, so a bad value shows no thumbnail
-    // rather than a broken image (and logs no scheme error). Mirrors safe_image_src.
-    const imageSrcSafe = (raw) => {
+    // rather than broken media (and logs no scheme error). Mirrors safe_media_src.
+    const mediaSrcSafe = (raw) => {
       const v = String(raw || "").replace(/[\u0000-\u001f]/g, "").trim();
       if (!v || /^(\/\/|\/\\|\\)/.test(v)) return "";
       if (/^[a-z][a-z0-9+.-]*:/i.test(v)) return /^https?:/i.test(v) ? v : "";
       return v; // a site path or an in-page anchor
     };
-    form.querySelectorAll("[data-ct-image-input]").forEach((input) => {
+    const uploadUrl = form.dataset.uploadUrl;
+    const csrfInput = form.querySelector('input[name="_sitecopy_csrf"]');
+    const csrf = csrfInput ? csrfInput.value : "";
+
+    form.querySelectorAll("[data-ct-media-input]").forEach((input) => {
       const preview = document.getElementById(input.getAttribute("aria-controls"));
-      if (!preview) return;
       input.addEventListener("input", () => {
-        const src = imageSrcSafe(input.value);
-        // Setting src="" would reload the current page as the image; drop the attribute
+        const src = mediaSrcSafe(input.value);
+        // Setting src="" would reload the current page as the media; drop the attribute
         // instead, which is also what onerror does for a broken URL.
+        if (!preview) return;
         if (src) preview.src = src;
         else preview.removeAttribute("src");
       });
+
+      // Upload button: hidden in the markup, revealed only when JS (and an upload URL)
+      // are present, because it posts via fetch. Without JS the URL field still works.
+      const row = preview && preview.closest("[data-ct-media-row]");
+      const uploadBtn = row ? row.querySelector("[data-ct-media-upload]") : null;
+      if (uploadBtn && uploadUrl) {
+        const kind = input.getAttribute("data-ct-media-kind") || "image";
+        const key = input.getAttribute("data-ct-field-key");
+        const file = document.createElement("input");
+        file.type = "file";
+        file.accept = kind === "video" ? "video/*" : "image/*";
+        file.hidden = true;
+        row.appendChild(file);
+        uploadBtn.hidden = false;
+        uploadBtn.addEventListener("click", () => file.click());
+        file.addEventListener("change", () => {
+          const chosen = file.files && file.files[0];
+          file.value = "";
+          if (!chosen) return;
+          const label = uploadBtn.textContent;
+          uploadBtn.disabled = true;
+          uploadBtn.textContent = "Subiendo…";
+          const body = new FormData();
+          body.append("key", key);
+          body.append("file", chosen);
+          fetch(uploadUrl, { method: "POST", headers: { "X-Sitecopy-CSRF": csrf }, body: body })
+            .then((r) => r.json().catch(() => null))
+            .then((payload) => {
+              uploadBtn.disabled = false;
+              uploadBtn.textContent = label;
+              if (!payload || !payload.ok) {
+                window.alert(
+                  (payload && payload.errors && payload.errors.join(" ")) ||
+                    "No pudimos subir el archivo."
+                );
+                return;
+              }
+              input.value = payload.url;
+              // Fire input so the counter and the preview both update.
+              input.dispatchEvent(new Event("input", { bubbles: true }));
+            })
+            .catch(() => {
+              uploadBtn.disabled = false;
+              uploadBtn.textContent = label;
+              window.alert("No pudimos subir el archivo: revisá tu conexión.");
+            });
+        });
+      }
     });
 
     // --- go to what was rejected ---

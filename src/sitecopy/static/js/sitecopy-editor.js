@@ -28,6 +28,8 @@
   const undoBtn = root.querySelector("[data-ed-undo]");
   const findDraftsBtn = root.querySelector("[data-ed-find-drafts]");
   const SAVE_URL = root.dataset.saveUrl;
+  const UPLOAD_URL = root.dataset.uploadUrl;
+  const MEDIA_VERSIONS_URL = root.dataset.mediaVersionsUrl;
   // The CSRF token for this session, rendered into the shell. Sent on every mutating
   // fetch; the server rejects a POST without it. A cross-site page can force a request
   // but cannot read this to include it.
@@ -348,6 +350,170 @@
     return key in pending ? pending[key] : (fieldFor(key) || {}).raw || "";
   }
 
+  /* ---------------- media (image/video) controls ---------------- */
+
+  /** Preview + upload + version gallery for a media field. Returns the preview element,
+   *  which the field's render() keeps in sync with the URL input. */
+  function buildMediaControls(wrap, field, key, input) {
+    const isVideo = field.type === "video";
+
+    const preview = document.createElement(isVideo ? "video" : "img");
+    preview.className = "ed-media-preview";
+    preview.hidden = true;
+    if (isVideo) {
+      preview.controls = true;
+      preview.muted = true;
+      preview.playsInline = true;
+      preview.preload = "metadata";
+      // A video announces readiness with loadeddata, not load.
+      preview.addEventListener("loadeddata", () => { preview.hidden = false; });
+    } else {
+      preview.alt = "";
+      preview.addEventListener("load", () => { preview.hidden = false; });
+    }
+    preview.addEventListener("error", () => { preview.hidden = true; });
+    wrap.appendChild(preview);
+
+    const bar = document.createElement("div");
+    bar.className = "ed-media-tools";
+
+    // Upload is only offered when the host wired a FileStore (the URL is rendered then).
+    if (UPLOAD_URL) {
+      const fileInput = document.createElement("input");
+      fileInput.type = "file";
+      fileInput.accept = isVideo ? "video/*" : "image/*";
+      fileInput.hidden = true;
+      const uploadBtn = document.createElement("button");
+      uploadBtn.type = "button";
+      uploadBtn.className = "ed-media-btn";
+      uploadBtn.textContent = isVideo ? "Subir un video" : "Subir una imagen";
+      uploadBtn.addEventListener("click", () => fileInput.click());
+      fileInput.addEventListener("change", () => {
+        const file = fileInput.files && fileInput.files[0];
+        if (file) uploadMedia(key, file, uploadBtn);
+        fileInput.value = ""; // let the same file be re-picked after an error
+      });
+      bar.appendChild(uploadBtn);
+      bar.appendChild(fileInput);
+    }
+
+    const gallery = document.createElement("div");
+    gallery.className = "ed-media-gallery";
+    gallery.hidden = true;
+
+    const versionsBtn = document.createElement("button");
+    versionsBtn.type = "button";
+    versionsBtn.className = "ed-media-btn";
+    versionsBtn.textContent = "Ver versiones anteriores";
+    versionsBtn.setAttribute("aria-expanded", "false");
+    let loaded = false;
+    versionsBtn.addEventListener("click", () => {
+      const open = gallery.hidden;
+      gallery.hidden = !open;
+      versionsBtn.setAttribute("aria-expanded", open ? "true" : "false");
+      if (open && !loaded) {
+        loaded = true;
+        loadVersions(key, gallery);
+      }
+    });
+    bar.appendChild(versionsBtn);
+
+    wrap.appendChild(bar);
+    wrap.appendChild(gallery);
+    return preview;
+  }
+
+  function uploadMedia(key, file, btn) {
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Subiendo…";
+    const form = new FormData();
+    form.append("key", key);
+    form.append("file", file);
+    // No Content-Type header: the browser sets the multipart boundary. Only the CSRF
+    // token rides along, same as every other mutating request.
+    fetch(UPLOAD_URL, { method: "POST", headers: { "X-Sitecopy-CSRF": CSRF }, body: form })
+      .then((r) => r.json().catch(() => null))
+      .then((payload) => {
+        btn.disabled = false;
+        btn.textContent = label;
+        if (!payload || !payload.ok) {
+          setStatus(
+            (payload && payload.errors && payload.errors.join(" ")) ||
+              "No pudimos subir el archivo.",
+            true
+          );
+          return;
+        }
+        // Point the field at the uploaded file — stageChange syncs the input, the canvas
+        // and the counter, and marks it pending.
+        stageChange(key, payload.url);
+        setStatus("Archivo subido. Guardá o publicá cuando quieras.");
+      })
+      .catch(() => {
+        btn.disabled = false;
+        btn.textContent = label;
+        setStatus("No pudimos subir el archivo: revisá tu conexión.", true);
+      });
+  }
+
+  function loadVersions(key, gallery) {
+    gallery.innerHTML = '<p class="ed-media-empty">Cargando…</p>';
+    fetch(MEDIA_VERSIONS_URL + "?key=" + encodeURIComponent(key), {
+      headers: { "X-Sitecopy-CSRF": CSRF },
+    })
+      .then((r) => r.json().catch(() => null))
+      .then((payload) => {
+        if (!payload || !payload.ok) {
+          gallery.innerHTML = '<p class="ed-media-empty">No pudimos cargar las versiones.</p>';
+          return;
+        }
+        const isVideo = payload.type === "video";
+        const items = [];
+        // The code default is always offered as "Original", so there is a way back to
+        // what the site shipped with even before anything was published.
+        if (payload.default) items.push({ url: payload.default, label: "Original" });
+        (payload.versions || []).forEach((v) => items.push({ url: v.url, label: "" }));
+        const seen = Object.create(null);
+        const uniq = items.filter((it) => (seen[it.url] ? false : (seen[it.url] = true)));
+        if (!uniq.length) {
+          gallery.innerHTML =
+            '<p class="ed-media-empty">Todavía no hay versiones anteriores.</p>';
+          return;
+        }
+        gallery.innerHTML = "";
+        uniq.forEach((it) => {
+          const thumb = document.createElement("button");
+          thumb.type = "button";
+          thumb.className = "ed-media-thumb";
+          thumb.title = it.url;
+          const media = document.createElement(isVideo ? "video" : "img");
+          media.src = it.url;
+          if (isVideo) {
+            media.muted = true;
+            media.preload = "metadata";
+          } else {
+            media.alt = "";
+          }
+          thumb.appendChild(media);
+          if (it.label) {
+            const tag = document.createElement("span");
+            tag.className = "ed-media-thumb-tag";
+            tag.textContent = it.label;
+            thumb.appendChild(tag);
+          }
+          thumb.addEventListener("click", () => {
+            stageChange(key, it.url);
+            setStatus("Listo. Guardá o publicá para que se vea en la web.");
+          });
+          gallery.appendChild(thumb);
+        });
+      })
+      .catch(() => {
+        gallery.innerHTML = '<p class="ed-media-empty">No pudimos cargar las versiones.</p>';
+      });
+  }
+
   function buildField(key) {
     const field = fieldFor(key);
     const wrap = document.createElement("div");
@@ -366,27 +532,21 @@
     where.textContent = field.groupTitle + (field.section ? " · " + field.section : "");
     wrap.appendChild(where);
 
+    const isMedia = field.type === "image" || field.type === "video";
     const multiline = field.type === "text" || field.type === "lines" || field.type === "rich";
     const input = document.createElement(multiline ? "textarea" : "input");
     input.id = "ed-" + key;
-    if (!multiline) input.type = field.type === "url" || field.type === "image" ? "url" : "text";
+    if (!multiline) input.type = field.type === "url" || isMedia ? "url" : "text";
     else input.rows = field.type === "rich" ? 6 : 3;
     input.value = valueOf(key);
     input.maxLength = field.max;
     wrap.appendChild(input);
 
-    // An image field is a URL, so it edits like one — but a thumbnail of what that URL
-    // points at is worth more than the path itself. It follows the input as it is typed
-    // (render() below), and hides itself while the URL is blank or broken.
+    // A media field is a URL, so it edits like one — but you can also upload a file and
+    // roll back to an earlier one. The value is still just the URL under the hood.
     let preview = null;
-    if (field.type === "image") {
-      preview = document.createElement("img");
-      preview.className = "ed-image-preview";
-      preview.alt = "";
-      preview.hidden = true;
-      preview.addEventListener("load", () => { preview.hidden = false; });
-      preview.addEventListener("error", () => { preview.hidden = true; });
-      wrap.appendChild(preview);
+    if (isMedia) {
+      preview = buildMediaControls(wrap, field, key, input);
     }
 
     if (field.hint) {

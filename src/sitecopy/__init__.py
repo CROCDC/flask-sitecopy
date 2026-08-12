@@ -30,10 +30,19 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _installed_version
 
 from sitecopy.extension import SiteCopy
+from sitecopy.media import (
+    FileStore,
+    LocalFileStore,
+    MediaVersion,
+    MediaVersionStore,
+    MemoryMediaVersionStore,
+    SQLAlchemyMediaVersionStore,
+)
 from sitecopy.registry import (
     DEFAULT_MAX_LENGTH,
     FieldType,
     Group,
+    MEDIA_TYPES,
     Registry,
     Section,
     TextField,
@@ -73,9 +82,16 @@ except PackageNotFoundError:  # running from a source tree that was never instal
 __all__ = [
     "DEFAULT_MAX_LENGTH",
     "FieldType",
+    "FileStore",
     "Group",
+    "LocalFileStore",
+    "MEDIA_TYPES",
+    "MediaVersion",
+    "MediaVersionStore",
+    "MemoryMediaVersionStore",
     "MemoryStore",
     "Registry",
+    "SQLAlchemyMediaVersionStore",
     "SQLAlchemyStore",
     "Section",
     "SiteCopy",

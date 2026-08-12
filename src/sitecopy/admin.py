@@ -20,6 +20,7 @@ Screens:
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from typing import Any
 
 from flask import (
@@ -39,8 +40,16 @@ from sitecopy import csrf
 from sitecopy import resolver
 from sitecopy.editor_markup import field_payload
 from sitecopy.registry import Group, TextField
-from sitecopy.sanitizer import safe_href, safe_image_src, sanitize, strip_tags, visible_text
-from sitecopy.state import SiteCopyState, current_registry, current_state, current_store
+from sitecopy.media import sniff
+from sitecopy.sanitizer import safe_href, safe_media_src, sanitize, strip_tags, visible_text
+from sitecopy.state import (
+    SiteCopyState,
+    current_file_store,
+    current_media_versions,
+    current_registry,
+    current_state,
+    current_store,
+)
 
 # The device frames offered by the preview, in the order they are shown.
 PREVIEW_DEVICES: tuple[dict[str, Any], ...] = (
@@ -106,7 +115,7 @@ def _normalize(field: TextField, raw: str) -> str:
     # on. A list pasted from a PDF or Word carries these; left alone they render as extra
     # bullets the operator never authored and desync the editor's click-to-line mapping.
     value = _EXOTIC_NEWLINES.sub("\n", value)
-    if field.type in ("line", "url", "image"):
+    if field.type in ("line", "url", "image", "video"):
         collapsed = " ".join(value.split())
         # Some fields are sentence fragments spliced into another string through a
         # token ("…sin crueldad animal.{price_clause}"), so the space at their edge is
@@ -209,18 +218,21 @@ def _validate(field: TextField, value: str) -> str | None:
             # safe_href strips whitespace to defeat `java\tscript:`; storing the
             # original meant a pasted URL with a space became a 404 on every page.
             return f"{_name(field)}: el link tiene espacios o caracteres raros."
-    if field.type == "image" and value:
-        cleaned = safe_image_src(value)
+    if field.type in ("image", "video") and value:
+        cleaned = safe_media_src(value)
         if cleaned is None:
             # Same guard the render path applies, said in the panel's voice. A relative
             # path or a site path is fine; a `javascript:`/`data:` URL or a bare
-            # `mailto:` is not a picture.
+            # `mailto:` is not a picture or a clip.
+            noun = "una imagen" if field.type == "image" else "un video"
+            example = "/static/foto.jpg" if field.type == "image" else "/static/clip.mp4"
             return (
-                f"{_name(field)}: tiene que ser un link a una imagen (https://… o una "
-                f"ruta del sitio como /static/foto.jpg)."
+                f"{_name(field)}: tiene que ser un link a {noun} (https://… o una "
+                f"ruta del sitio como {example})."
             )
         if cleaned != value:
-            return f"{_name(field)}: el link de la imagen tiene espacios o caracteres raros."
+            noun = "la imagen" if field.type == "image" else "el video"
+            return f"{_name(field)}: el link de {noun} tiene espacios o caracteres raros."
     return None
 
 
@@ -385,6 +397,26 @@ def _flash_count(count: int, singular: str, plural: str) -> None:
         flash(singular.format(n=count) if count == 1 else plural.format(n=count), "success")
     else:
         flash("No había cambios sin publicar.", "notice")
+
+
+def _record_media_versions(keys: Iterable[str]) -> None:
+    """Remember the just-published URL of every media field in `keys`, for the gallery.
+
+    Called AFTER the publish is committed, so `field_state` reads the fresh live value.
+    `record` de-duplicates, so passing the whole publish scope is safe: a text key or an
+    unchanged media key adds nothing.
+    """
+    versions = current_media_versions()
+    if versions is None:
+        return
+    registry = current_registry()
+    for key in keys:
+        field = registry.field_for(key)
+        if field is None or field.type not in ("image", "video"):
+            continue
+        live = resolver.field_state(key)["live"]
+        if live:
+            versions.record(key, live)
 
 
 def _render(template: str, **context: Any) -> str:
@@ -569,6 +601,8 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
                 }, 400
             published = store.publish(scope, registry.defaults)
         resolver.save()
+        if data.get("action") == "publish":
+            _record_media_versions(scope)
         return {
             "ok": True,
             "saved": staged,
@@ -644,6 +678,7 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
         if orphans:
             store.discard_drafts(orphans)
         resolver.save()
+        _record_media_versions(registry.fields)
         _flash_count(changed, "Se publicó {n} texto.", "Se publicaron {n} textos.")
         return redirect(url_for(f"{state.blueprint_name}.index"))
 
@@ -677,6 +712,67 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
             "Se descartaron {n} cambios sin publicar.",
         )
         return redirect(url_for(f"{state.blueprint_name}.index"))
+
+    @bp.route("/upload", methods=["POST"])
+    @login_required
+    def upload() -> Any:
+        """Store an uploaded image/video and hand back its URL for a media field.
+
+        The bytes are trusted, not the filename or the browser's Content-Type: the real
+        type is sniffed from the leading bytes, the size is capped per kind, and the
+        FileStore writes under a generated name. With no FileStore wired, uploads are off
+        and the panel falls back to editing the URL by hand.
+        """
+        file_store = current_file_store()
+        if file_store is None or not file_store.enabled:
+            return {
+                "ok": False,
+                "errors": ["La subida de archivos no está habilitada en este sitio."],
+            }, 501
+        registry = current_registry()
+        key = (request.form.get("key") or "").strip()
+        field = registry.field_for(key)
+        if field is None or field.type not in ("image", "video"):
+            return {"ok": False, "errors": ["Ese campo no acepta archivos."]}, 400
+        upload_file = request.files.get("file")
+        if upload_file is None or not upload_file.filename:
+            return {"ok": False, "errors": ["No llegó ningún archivo."]}, 400
+        cap = current_state().upload_max_bytes.get(field.type, 0)
+        # Read at most cap+1: enough to know it is over the limit without pulling an
+        # unbounded upload into memory.
+        data = upload_file.read(cap + 1) if cap else upload_file.read()
+        if cap and len(data) > cap:
+            return {
+                "ok": False,
+                "errors": [f"El archivo es muy grande (máximo {cap // (1024 * 1024)} MB)."],
+            }, 400
+        kind = sniff(data)
+        if kind is None or kind.kind != field.type:
+            if field.type == "image":
+                detail = "una imagen (png, jpg, webp o gif)"
+            else:
+                detail = "un video (mp4 o webm)"
+            return {"ok": False, "errors": [f"El archivo no es {detail} que podamos usar."]}, 400
+        url = file_store.save(data, kind)
+        return {"ok": True, "url": url, "type": kind.kind}
+
+    @bp.route("/media-versions")
+    @login_required
+    def media_versions_route() -> Any:
+        """The gallery data for one media field: its past URLs plus the code default."""
+        registry = current_registry()
+        key = request.args.get("key", "")
+        field = registry.field_for(key)
+        if field is None or field.type not in ("image", "video"):
+            return {"ok": False, "versions": []}, 400
+        versions = current_media_versions()
+        items = versions.versions(key) if versions is not None else []
+        return {
+            "ok": True,
+            "type": field.type,
+            "default": field.default,
+            "versions": [{"url": v.url, "ts": v.created_at.isoformat()} for v in items],
+        }
 
     @bp.route("/<group_key>")
     @login_required
@@ -743,6 +839,7 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
                 )
             store.publish(keys, current_registry().defaults)
             resolver.save()
+            _record_media_versions(keys)
             flash("Cambios publicados. Ya se ven en la web.", "success")
         else:
             resolver.save()

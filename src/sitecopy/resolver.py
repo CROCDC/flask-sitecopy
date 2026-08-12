@@ -25,7 +25,7 @@ from flask import Flask, g, has_app_context, has_request_context, request
 from markupsafe import Markup, escape
 
 from sitecopy.registry import Group, Registry
-from sitecopy.sanitizer import safe_href, safe_image_src, sanitize
+from sitecopy.sanitizer import safe_href, safe_media_src, sanitize
 from sitecopy.state import current_registry, current_state, current_store
 
 # `?preview=1` on any public URL renders pending drafts — for a logged-in admin only.
@@ -220,12 +220,12 @@ def _global_tokens() -> dict[str, str]:
         value = _interpolate(effective(key), tokens)
         field = registry.fields.get(key)
         # A `url` token is rendered straight into href="…" all over the site, so it
-        # goes through the same link guard as any url field (see `t`). An `image` token
-        # (a shared logo, say) reaches src="…" the same way and gets the same guard.
+        # goes through the same link guard as any url field (see `t`). An `image`/`video`
+        # token (a shared logo, say) reaches src="…" the same way and gets the same guard.
         if field is not None and field.type == "url":
             value = _safe_url(value, key)
-        elif field is not None and field.type == "image":
-            value = _safe_image(value, key)
+        elif field is not None and field.type in ("image", "video"):
+            value = _safe_media(value, key)
         tokens[name] = value
     cache["tokens"] = tokens
     return tokens
@@ -280,8 +280,8 @@ def t(key: str, **params: Any) -> str | Markup:
     value = _interpolate(effective(key), tokens)
     if field.type == "url":
         return _safe_url(value, key)
-    if field.type == "image":
-        return _safe_image(value, key)
+    if field.type in ("image", "video"):
+        return _safe_media(value, key)
     return value
 
 
@@ -297,14 +297,14 @@ def _safe_url(value: str, key: str) -> str:
     return current_registry().defaults.get(key, "")
 
 
-def _safe_image(value: str, key: str) -> str:
-    """A URL we are willing to put in an `<img src>`, else the registry default.
+def _safe_media(value: str, key: str) -> str:
+    """A URL we are willing to put in an `<img>`/`<video>` src, else the registry default.
 
-    Same reasoning as `_safe_url`: the admin already rejects a bad image URL on save,
+    Same reasoning as `_safe_url`: the admin already rejects a bad media URL on save,
     but a value that reached the table some other way must not be able to turn every
-    picture on the site into a `javascript:` navigation.
+    picture or clip on the site into a `javascript:` navigation.
     """
-    cleaned = safe_image_src(value)
+    cleaned = safe_media_src(value)
     if cleaned is not None:
         return cleaned
     return current_registry().defaults.get(key, "")
