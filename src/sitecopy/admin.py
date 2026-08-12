@@ -39,7 +39,7 @@ from sitecopy import csrf
 from sitecopy import resolver
 from sitecopy.editor_markup import field_payload
 from sitecopy.registry import Group, TextField
-from sitecopy.sanitizer import safe_href, sanitize, strip_tags, visible_text
+from sitecopy.sanitizer import safe_href, safe_image_src, sanitize, strip_tags, visible_text
 from sitecopy.state import SiteCopyState, current_registry, current_state, current_store
 
 # The device frames offered by the preview, in the order they are shown.
@@ -106,7 +106,7 @@ def _normalize(field: TextField, raw: str) -> str:
     # on. A list pasted from a PDF or Word carries these; left alone they render as extra
     # bullets the operator never authored and desync the editor's click-to-line mapping.
     value = _EXOTIC_NEWLINES.sub("\n", value)
-    if field.type in ("line", "url"):
+    if field.type in ("line", "url", "image"):
         collapsed = " ".join(value.split())
         # Some fields are sentence fragments spliced into another string through a
         # token ("…sin crueldad animal.{price_clause}"), so the space at their edge is
@@ -209,6 +209,18 @@ def _validate(field: TextField, value: str) -> str | None:
             # safe_href strips whitespace to defeat `java\tscript:`; storing the
             # original meant a pasted URL with a space became a 404 on every page.
             return f"{_name(field)}: el link tiene espacios o caracteres raros."
+    if field.type == "image" and value:
+        cleaned = safe_image_src(value)
+        if cleaned is None:
+            # Same guard the render path applies, said in the panel's voice. A relative
+            # path or a site path is fine; a `javascript:`/`data:` URL or a bare
+            # `mailto:` is not a picture.
+            return (
+                f"{_name(field)}: tiene que ser un link a una imagen (https://… o una "
+                f"ruta del sitio como /static/foto.jpg)."
+            )
+        if cleaned != value:
+            return f"{_name(field)}: el link de la imagen tiene espacios o caracteres raros."
     return None
 
 

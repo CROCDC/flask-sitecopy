@@ -168,6 +168,27 @@
       if (CURRENT[key] !== field.raw) node.setAttribute("data-ct-dirty", "");
       else node.removeAttribute("data-ct-dirty");
     });
+    updateImages(key);
+  }
+
+  /** An image field lands in an `<img src>` attribute, so it has no <ct-t> node to
+   *  refresh — but a picture change IS visual, so mirror the new URL onto the element
+   *  live. The key sits in data-ct-keys (recorded by editor_markup for attribute copy),
+   *  so an <img> whose src came from this field is `img[data-ct-keys~="key"]`. Setting
+   *  the attribute (not .src="") avoids reloading the page itself when the URL is blank.
+   */
+  function updateImages(key) {
+    if ((FIELDS[key] || {}).type !== "image") return;
+    const value = interpolate(String(CURRENT[key] == null ? "" : CURRENT[key]));
+    document.querySelectorAll('img[data-ct-keys~="' + key + '"]').forEach((img) => {
+      if (value) {
+        if (img.getAttribute("src") !== value) img.setAttribute("src", value);
+      } else {
+        img.removeAttribute("src");
+      }
+      if (value !== ((FIELDS[key] || {}).raw || "")) img.setAttribute("data-ct-dirty", "");
+      else img.removeAttribute("data-ct-dirty");
+    });
   }
 
   /* ---------------- floating chrome ---------------- */

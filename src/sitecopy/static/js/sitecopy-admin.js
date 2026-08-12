@@ -28,6 +28,19 @@
       render();
     });
 
+    // --- image previews follow the URL as it is typed ---
+    form.querySelectorAll("[data-ct-image-input]").forEach((input) => {
+      const preview = document.getElementById(input.getAttribute("aria-controls"));
+      if (!preview) return;
+      input.addEventListener("input", () => {
+        const value = input.value.trim();
+        // Setting src="" would reload the current page as the image; drop the attribute
+        // instead, which is also what onerror does for a broken URL.
+        if (value) preview.src = value;
+        else preview.removeAttribute("src");
+      });
+    });
+
     // --- go to what was rejected ---
     // The message names the field, but the field itself can be 7000px down a page that
     // came back scrolled to the top, with nothing on screen pointing at it.

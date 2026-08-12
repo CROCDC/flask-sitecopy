@@ -369,11 +369,25 @@
     const multiline = field.type === "text" || field.type === "lines" || field.type === "rich";
     const input = document.createElement(multiline ? "textarea" : "input");
     input.id = "ed-" + key;
-    if (!multiline) input.type = field.type === "url" ? "url" : "text";
+    if (!multiline) input.type = field.type === "url" || field.type === "image" ? "url" : "text";
     else input.rows = field.type === "rich" ? 6 : 3;
     input.value = valueOf(key);
     input.maxLength = field.max;
     wrap.appendChild(input);
+
+    // An image field is a URL, so it edits like one — but a thumbnail of what that URL
+    // points at is worth more than the path itself. It follows the input as it is typed
+    // (render() below), and hides itself while the URL is blank or broken.
+    let preview = null;
+    if (field.type === "image") {
+      preview = document.createElement("img");
+      preview.className = "ed-image-preview";
+      preview.alt = "";
+      preview.hidden = true;
+      preview.addEventListener("load", () => { preview.hidden = false; });
+      preview.addEventListener("error", () => { preview.hidden = true; });
+      wrap.appendChild(preview);
+    }
 
     if (field.hint) {
       const hint = document.createElement("p");
@@ -437,6 +451,13 @@
     function render() {
       count.textContent = input.value.length + " / " + field.max;
       count.classList.toggle("is-over", input.value.length > field.max);
+      if (preview) {
+        const url = input.value.trim();
+        // Dropping the attribute (not src="") avoids reloading the admin page itself as
+        // the image; the load/error handlers flip `hidden` to match.
+        if (url) preview.src = url;
+        else { preview.removeAttribute("src"); preview.hidden = true; }
+      }
       const dirty = key in pending;
       wrap.classList.toggle("is-dirty", dirty);
       // The older form screen has flagged this since day one; with 91 fields in the

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" role="img" aria-label="Un bolso de cuero vegano sobre una mesa de madera">
+  <rect width="480" height="360" fill="#f7f3ec"/>
+  <rect y="250" width="480" height="110" fill="#e4dccf"/>
+  <g transform="translate(240 190)">
+    <path d="M-95 -40 h190 a12 12 0 0 1 12 12 v120 a18 18 0 0 1 -18 18 h-178 a18 18 0 0 1 -18 -18 v-120 a12 12 0 0 1 12 -12 z" fill="#356b48"/>
+    <path d="M-95 -40 h190 v34 h-202 v-22 a12 12 0 0 1 12 -12 z" fill="#2c5a3c"/>
+    <path d="M-58 -40 v-22 a58 58 0 0 1 116 0 v22" fill="none" stroke="#8a6a3a" stroke-width="14" stroke-linecap="round"/>
+    <rect x="-16" y="6" width="32" height="42" rx="8" fill="#fffdf9"/>
+  </g>
+  <text x="240" y="330" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif" font-size="20" fill="#6f665c">cuero de cactus</text>
+</svg>

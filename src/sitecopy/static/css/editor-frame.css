@@ -165,6 +165,13 @@ video[data-ct-keys]:hover, video[data-ct-keys]:focus {
     outline-color: #9a5730;
     outline-style: solid;
 }
+/* An image swapped in the editor but not yet published: a solid cognac frame, the
+   replaced-element counterpart of ct-t[data-ct-dirty]'s fill. */
+img[data-ct-keys][data-ct-dirty] {
+    outline-color: #b56a3a;
+    outline-style: solid;
+    outline-width: 3px;
+}
 
 /* A touch device never hovers. Show the affordance as an outline rather than a badge
    parked over the content — at 32px it covered the cart count and the wordmark's

@@ -73,12 +73,22 @@
                       {% if describedby %}aria-describedby="{{ describedby }}"{% endif %}
                       class="ct-input ct-input-{{ f.type }}">{{ st.value }}</textarea>
             {% else %}
-            <input type="{{ 'url' if f.type == 'url' else 'text' }}"
+            <input type="{{ 'url' if f.type in ('url', 'image') else 'text' }}"
                    id="fld-{{ loop.index0 }}-{{ sec.key }}" name="{{ f.key }}"
                    value="{{ st.value }}" maxlength="{{ f.max_length }}"
                    {% if invalid %}aria-invalid="true"{% endif %}
                    {% if describedby %}aria-describedby="{{ describedby }}"{% endif %}
+                   {% if f.type == 'image' %}data-ct-image-input aria-controls="prev-{{ f.key }}"{% endif %}
                    data-ct-input class="ct-input">
+            {% if f.type == 'image' %}
+            {# A thumbnail of what the URL points at, so the operator sees the picture and
+               not just a path. src set from the current value; JS keeps it in step as
+               they type. Hidden until it loads, so a blank or broken URL shows no frame. #}
+            <img class="ct-image-preview" id="prev-{{ f.key }}" alt=""
+                 data-ct-image-preview src="{{ st.value }}"
+                 {% if not st.value %}hidden{% endif %}
+                 onload="this.hidden=false" onerror="this.hidden=true">
+            {% endif %}
             {% endif %}
 
             <div class="ct-field-foot">

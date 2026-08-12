@@ -78,6 +78,23 @@ def safe_href(raw: str | None) -> str | None:
     return value if head.lower() in SAFE_SCHEMES else None
 
 
+def safe_image_src(raw: str | None) -> str | None:
+    """Return `raw` if it is something we're willing to put in an `<img src>`, else None.
+
+    An image field holds the picture's location, so it accepts what `safe_href` does —
+    absolute http(s), root-relative and relative paths — MINUS `mailto:`/`tel:`, which
+    are valid links but never a picture, and would just render as a broken image if
+    someone pasted one by mistake. `data:` and `javascript:` are already rejected by
+    `safe_href` (they are not in SAFE_SCHEMES), so a stored `javascript:` URL can never
+    reach an `src` attribute even if it lands in the table some other way."""
+    cleaned = safe_href(raw)
+    if cleaned is None:
+        return None
+    if cleaned.lower().startswith(("mailto:", "tel:")):
+        return None
+    return cleaned
+
+
 def _looks_like_prose(tag_text: str | None) -> bool:
     """True when `<…>` holds a sentence rather than markup.
 

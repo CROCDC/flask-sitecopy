@@ -149,6 +149,14 @@
 .ed-field textarea[readonly], .ed-field input[readonly] {
     cursor: pointer; background: var(--adm-card); border-style: dashed;
 }
+/* Thumbnail of an image field's URL. Bounded and on a checkerboard so a transparent
+   PNG still reads against the panel. */
+.ed-image-preview {
+    display: block; margin-top: 0.5rem; max-width: 100%; max-height: 160px;
+    border: 1px solid var(--adm-input-line); border-radius: 8px; object-fit: contain;
+    background: conic-gradient(#0000 90deg, rgba(0,0,0,.05) 0 180deg,
+                               #0000 0 270deg, rgba(0,0,0,.05) 0) 0 0 / 16px 16px;
+}
 .ed-field.is-dirty { border-left: 3px solid var(--adm-accent); padding-left: 0.6rem; margin-left: -0.6rem; }
 /* Saved, but the shop still shows the old wording. Dashed, so it reads as "parked"
    next to the solid bar of an edit that has not been saved at all. */

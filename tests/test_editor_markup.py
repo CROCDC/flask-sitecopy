@@ -54,11 +54,15 @@ def test_edit_mode_wraps_visible_text_for_a_logged_in_admin(client) -> None:
 
 
 def test_a_value_inside_an_attribute_is_recorded_on_its_element(client) -> None:
-    """It can't be wrapped, so the editor shows a badge that opens the side panel."""
+    """It can't be wrapped, so the editor shows a badge that opens the side panel.
+
+    The demo's hero <img> carries TWO editable attributes — an `image` src and its alt —
+    so both keys are recorded on the one element, space-separated.
+    """
     login(client)
     html = client.get("/?edit=1").get_data(as_text=True)
     assert 'alt="Una foto"' in html
-    assert 'data-ct-keys="home.hero.alt"' in html
+    assert 'data-ct-keys="home.hero.image home.hero.alt"' in html
 
 
 def test_a_value_inside_the_title_goes_to_the_panel(client) -> None:
