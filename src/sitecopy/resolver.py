@@ -26,6 +26,9 @@ from markupsafe import Markup, escape
 
 from sitecopy.registry import Group, Registry
 from sitecopy.sanitizer import safe_href, safe_media_src, sanitize
+from sitecopy.sizes import BASE as BASE_SIZE
+from sitecopy.sizes import classes as size_classes
+from sitecopy.sizes import is_size_key, size_key
 from sitecopy.state import current_registry, current_state, current_store
 
 # `?preview=1` on any public URL renders pending drafts — for a logged-in admin only.
@@ -106,6 +109,9 @@ def invalidate() -> None:
         cache.pop("overrides", None)
         cache.pop("tokens", None)
         cache.pop("previous", None)
+        # Derived from the overrides above: a save that adds the first size on the site
+        # has to turn the response rewrite on for the very next render.
+        cache.pop("sizes_active", None)
 
 
 def save() -> None:
@@ -308,6 +314,80 @@ def _safe_media(value: str, key: str) -> str:
     if cleaned is not None:
         return cleaned
     return current_registry().defaults.get(key, "")
+
+
+# --- text size ----------------------------------------------------------------
+#
+# A size is stored as a sibling override row (`size:<key>`), so it resolves through
+# exactly the same precedence as the copy — including "drafts only in preview". See
+# sitecopy/sizes.py for why it is stored that way.
+
+
+def size_scale() -> tuple[str, ...]:
+    """The sizes this install offers, or `()` when the feature was never turned on."""
+    return current_state().text_sizes
+
+
+def size_for(key: str) -> str:
+    """The size token `key` renders at, or `""` for whatever size the site already uses.
+
+    The scale is re-checked HERE, not only where the value is saved. A token that
+    reached the table some other way — a restored backup, a manual UPDATE, a scale the
+    host narrowed after the fact — must not be able to put an arbitrary class on a
+    public page, and must degrade to "no size" rather than to a broken one. Same
+    reasoning as `_safe_url` and `_safe_media`.
+    """
+    scale = size_scale()
+    if not scale:
+        return ""
+    field = current_registry().fields.get(key)
+    if field is None or not field.is_resizable:
+        return ""
+    token = effective(size_key(key))
+    # BASE is the absence of a size, so it never renders a class even if a row holds it
+    # (an older draft, say, from before "Normal" learned to delete the row).
+    if token == BASE_SIZE or token not in scale:
+        return ""
+    return token
+
+
+def size_class(key: str, block: bool = False) -> str:
+    """`key`'s size as a class attribute, or `""`.
+
+    The escape hatch for a host that builds its own `t()` (`jinja_globals=False`) and so
+    never passes through the marker rewrite::
+
+        <h1 class="{{ size_class('home.hero.title') }}">{{ my_t('home.hero.title') }}</h1>
+    """
+    token = size_for(key)
+    return size_classes(token, block=block) if token else ""
+
+
+def sizes_active() -> bool:
+    """True when anything this request could render carries a size.
+
+    This is what keeps the feature free for everyone else: the response rewrite reads
+    and re-scans the whole HTML body, and it must not do that on every public response
+    of every site. Answering from the overrides map — already loaded for this request —
+    costs one pass over the keys.
+    """
+    scale = size_scale()
+    if not scale:
+        return False
+    cache = _cache()
+    if "sizes_active" in cache:
+        return cache["sizes_active"]
+    preview = is_preview()
+    active = False
+    for key, (published, draft) in _overrides().items():
+        if not is_size_key(key):
+            continue
+        value = draft if (draft is not None and preview) else published
+        if value and value != BASE_SIZE and value in scale:
+            active = True
+            break
+    cache["sizes_active"] = active
+    return active
 
 
 def t_plain(key: str, **params: Any) -> str | Markup:

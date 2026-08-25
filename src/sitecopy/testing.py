@@ -24,6 +24,7 @@ from pathlib import Path
 
 from sitecopy.registry import Registry
 from sitecopy.sanitizer import safe_media_src, sanitize
+from sitecopy.sizes import SIZE_PREFIX
 
 # `t('key')` / `t_lines("key")` / `t_plain('key')` / `t_optional('key')` as written in
 # templates and in Python. The trailing `[,)]` is what keeps a runtime-built key
@@ -63,6 +64,14 @@ def check_registry(registry: Registry) -> list[str]:
             problems.append(f"group {group.key!r} declares section {key!r} twice")
 
     for key, field in registry.fields.items():
+        if key.startswith(SIZE_PREFIX):
+            # Text sizes are stored as sibling rows under this namespace, so a registry
+            # key inside it would share a row with another field's size: whichever wrote
+            # last would win, silently.
+            problems.append(
+                f"{key}: {SIZE_PREFIX!r} is reserved (text sizes are stored there); "
+                f"rename the key"
+            )
         if not field.label.strip():
             problems.append(f"{key}: no label")
         if not field.default.strip():

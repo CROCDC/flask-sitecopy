@@ -58,6 +58,10 @@ class SiteCopyState:
     media_versions: "MediaVersionStore | None" = None
     # Per-kind upload size caps, in bytes.
     upload_max_bytes: dict[str, int] = field(default_factory=dict)
+    # The text sizes this install offers, in canonical order. Empty — the default —
+    # means the feature is off: no size is ever resolved, stored or rendered, and the
+    # response rewrite stays edit-mode-only, exactly as before. See sitecopy/sizes.py.
+    text_sizes: tuple[str, ...] = ()
 
 
 def current_state() -> SiteCopyState:
