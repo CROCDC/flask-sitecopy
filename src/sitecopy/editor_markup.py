@@ -46,7 +46,7 @@ from sitecopy.resolver import (
 from sitecopy.sanitizer import sanitize
 from sitecopy.sizes import classes as size_classes
 from sitecopy.sizes import css_class as size_css_class
-from sitecopy.sizes import stylesheet
+from sitecopy.sizes import steps_for, stylesheet
 from sitecopy.state import current_registry, current_state
 
 # Elements whose content is raw text: a wrapper element inside them would render as
@@ -256,6 +256,11 @@ def build_manifest(path: str, inline: list[str], hidden: list[str]) -> dict[str,
         # Text the site renders from somewhere else (a product catalogue). Clicking it
         # says where it lives instead of shrugging.
         "external": state.external_content or None,
+        # The sizes this install offers, in the order the panel shows them. Empty list
+        # where the feature is off, so the editor simply never draws the control.
+        "sizes": [
+            {"token": step.token, "label": step.label} for step in steps_for(state.text_sizes)
+        ],
     }
 
 
@@ -292,6 +297,27 @@ def field_payload(key: str) -> dict[str, Any]:
         "section": registry.field_section.get(key, ""),
         "hasDraft": state["has_draft"],
         "isOverridden": state["is_overridden"],
+        **_size_payload(key, field),
+    }
+
+
+def _size_payload(key: str, field: Any) -> dict[str, Any]:
+    """The field's size, for the panel — nothing at all where sizes are turned off.
+
+    A site that never asked for the feature gets exactly the payload it got before it
+    existed, so nothing reading this has to learn a new shape it will never see.
+    """
+    from sitecopy.resolver import size_scale, size_state
+
+    if not size_scale() or not field.is_resizable:
+        return {"resizable": False} if size_scale() else {}
+    size = size_state(key)
+    return {
+        "resizable": True,
+        # What the panel shows as chosen: the pending size if there is one, else live.
+        "size": size["value"],
+        "sizeLive": size["live"],
+        "sizeHasDraft": size["has_draft"],
     }
 
 

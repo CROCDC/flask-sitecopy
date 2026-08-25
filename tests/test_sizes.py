@@ -6,6 +6,8 @@ with `text_sizes=` rather than using the shared fixtures.
 
 from __future__ import annotations
 
+import json
+import re
 from pathlib import Path
 
 import pytest
@@ -633,3 +635,220 @@ def test_a_marked_but_unsized_value_degrades_to_its_own_text(sized_app) -> None:
             f"<p>{EDIT_START}{TITLE}{EDIT_SEP}Hola{EDIT_END}</p>", edit=False
         )
     assert html == "<p>Hola</p>"
+
+
+# --- saving, publishing and stepping back ----------------------------------------
+
+
+@pytest.fixture
+def sized_admin(sized_app):
+    client = sized_app.test_client()
+    client.post("/admin/content/login", data={"password": "secreto"})
+    return client
+
+
+def save(client, changes, **extra):
+    return client.post("/admin/content/save", json={"changes": changes, **extra})
+
+
+def row(app, key):
+    with app.app_context():
+        return current_store().get(size_key(key))
+
+
+def test_a_size_is_staged_as_a_draft_without_touching_the_live_site(sized_app, sized_admin) -> None:
+    assert save(sized_admin, {size_key(TITLE): "lg"}).get_json()["ok"] is True
+    assert row(sized_app, TITLE).draft_value == "lg"
+    assert "sc-s" not in sized_admin.get("/").get_data(as_text=True)
+
+
+def test_publishing_a_text_publishes_the_size_it_was_given(sized_app, sized_admin) -> None:
+    """They are one change to whoever made them, and the confirm names one text."""
+    save(
+        sized_admin,
+        {TITLE: "Otro título", size_key(TITLE): "xl"},
+        action="publish",
+        keys=[TITLE],
+    )
+    html = sized_admin.get("/").get_data(as_text=True)
+    assert '<span class="sc-s sc-s-xl">Otro título</span>' in html
+
+
+def test_going_back_to_normal_deletes_the_row_instead_of_storing_the_word(
+    sized_app, sized_admin
+) -> None:
+    """"Normal" is the absence of a size, so publishing it clears the override rather
+    than storing the word "base" — the same collapse the copy path does against the
+    registry default. What is left behind is only the history undo needs."""
+    save(sized_admin, {size_key(TITLE): "lg"}, action="publish", keys=[TITLE])
+    save(sized_admin, {size_key(TITLE): BASE}, action="publish", keys=[TITLE])
+    stored = row(sized_app, TITLE)
+    assert stored.published_value is None and stored.draft_value is None
+    assert stored.previous_value == "lg"
+    with sized_app.test_request_context("/"):
+        assert size_for(TITLE) == ""
+
+
+def test_a_size_equal_to_the_live_one_is_not_a_pending_change(sized_app, sized_admin) -> None:
+    save(sized_admin, {size_key(TITLE): "lg"}, action="publish", keys=[TITLE])
+    save(sized_admin, {size_key(TITLE): "lg"})
+    assert row(sized_app, TITLE).draft_value is None
+
+
+def test_choosing_normal_on_a_field_that_never_had_a_size_stores_nothing(
+    sized_app, sized_admin
+) -> None:
+    save(sized_admin, {size_key(TITLE): BASE})
+    assert row(sized_app, TITLE) is None
+
+
+def test_a_size_that_is_not_in_the_scale_is_refused(sized_admin) -> None:
+    response = save(sized_admin, {size_key(TITLE): "gigante"})
+    assert response.status_code == 400
+    assert "ese tamaño no existe" in response.get_json()["errors"][0]
+
+
+def test_a_refused_size_writes_nothing_at_all(sized_app, sized_admin) -> None:
+    """All-or-nothing, like every other save: the editor keeps what was typed."""
+    response = save(sized_admin, {TITLE: "Un título válido", size_key(TITLE): "gigante"})
+    assert response.status_code == 400
+    with sized_app.app_context():
+        assert current_store().get(TITLE) is None
+
+
+def test_a_size_on_a_field_that_does_not_take_one_is_refused(sized_admin) -> None:
+    response = save(sized_admin, {size_key("home.hero.image"): "lg"})
+    assert response.status_code == 400
+    assert "no cambia de tamaño" in response.get_json()["errors"][0]
+
+
+def test_a_size_for_a_key_that_is_gone_is_refused(sized_admin) -> None:
+    response = save(sized_admin, {size_key("no.existe"): "lg"})
+    assert response.status_code == 400
+    assert "ya no existe" in response.get_json()["errors"][0]
+
+
+def test_a_size_that_is_not_even_a_string_is_refused(sized_admin) -> None:
+    response = save(sized_admin, {size_key(TITLE): ["lg"]})
+    assert response.status_code == 400
+    assert "no pudimos leer" in response.get_json()["errors"][0]
+
+
+def test_an_install_with_sizes_off_refuses_one(admin) -> None:
+    response = save(admin, {size_key(TITLE): "lg"})
+    assert response.status_code == 400
+    assert "no permite cambiar el tamaño" in response.get_json()["errors"][0]
+
+
+def test_publishing_leaves_someone_elses_parked_size_alone(sized_app, sized_admin) -> None:
+    save(sized_admin, {size_key("home.hero.body"): "sm"})
+    save(sized_admin, {size_key(TITLE): "lg"}, action="publish", keys=[TITLE])
+    assert row(sized_app, "home.hero.body").draft_value == "sm"
+    assert row(sized_app, "home.hero.body").published_value is None
+
+
+def test_a_pending_size_counts_as_its_fields_change_and_is_listed_on_its_line(
+    sized_app, sized_admin
+) -> None:
+    """A count the panel's list cannot account for is the "3 changes, 2 rows" bug."""
+    save(sized_admin, {TITLE: "Otro título", size_key(TITLE): "lg"})
+    with sized_app.app_context():
+        assert resolver.pending_draft_count() == 1
+    payload = save(sized_admin, {}).get_json()
+    assert payload["pendingKeys"] == [TITLE]
+    assert payload["pendingFields"][TITLE]["size"] == "lg"
+
+
+def test_a_size_pending_on_its_own_still_shows_up(sized_app, sized_admin) -> None:
+    save(sized_admin, {size_key(TITLE): "lg"})
+    with sized_app.app_context():
+        assert resolver.pending_draft_count() == 1
+    assert save(sized_admin, {}).get_json()["pendingKeys"] == [TITLE]
+
+
+def test_discarding_a_text_discards_the_size_staged_with_it(sized_app, sized_admin) -> None:
+    save(sized_admin, {TITLE: "Otro título", size_key(TITLE): "lg"})
+    sized_admin.post("/admin/content/discard", json={"keys": [TITLE]})
+    assert row(sized_app, TITLE) is None
+    with sized_app.app_context():
+        assert resolver.pending_draft_count() == 0
+
+
+def test_undo_steps_the_size_back_with_the_wording(sized_app, sized_admin) -> None:
+    """Restoring the text and leaving it at the size the replaced version was given is
+    half an undo."""
+    save(sized_admin, {TITLE: "Primero", size_key(TITLE): "sm"}, action="publish", keys=[TITLE])
+    save(sized_admin, {TITLE: "Segundo", size_key(TITLE): "xl"}, action="publish", keys=[TITLE])
+    response = sized_admin.post("/admin/content/revert", json={"keys": [TITLE]})
+    body = response.get_json()
+    assert body["values"][TITLE] == "Primero"
+    assert body["sizes"][TITLE] == "sm"
+
+
+def test_undo_goes_back_to_no_size_when_that_is_what_there_was(sized_app, sized_admin) -> None:
+    save(sized_admin, {TITLE: "Primero"}, action="publish", keys=[TITLE])
+    save(sized_admin, {TITLE: "Segundo", size_key(TITLE): "xl"}, action="publish", keys=[TITLE])
+    body = sized_admin.post("/admin/content/revert", json={"keys": [TITLE]}).get_json()
+    assert body["sizes"][TITLE] == BASE
+
+
+def test_a_pending_size_the_host_has_since_dropped_blocks_the_publish() -> None:
+    """Publishing does not re-run the save-time checks and publishes drafts this request
+    never wrote — including one parked before the scale was narrowed."""
+    store = MemoryStore()
+    wide = build_app(store=store, text_sizes=True)
+    client = wide.test_client()
+    client.post("/admin/content/login", data={"password": "secreto"})
+    save(client, {size_key(TITLE): "2xl"})
+
+    narrow = build_app(store=store, text_sizes=("sm", "base"))
+    narrow_client = narrow.test_client()
+    narrow_client.post("/admin/content/login", data={"password": "secreto"})
+    response = save(narrow_client, {}, action="publish", keys=[TITLE])
+    assert response.status_code == 400
+    assert "ese tamaño no existe" in response.get_json()["errors"][0]
+
+
+def test_publishing_the_whole_site_publishes_the_sizes_too(sized_app, sized_admin) -> None:
+    save(sized_admin, {size_key(TITLE): "lg"})
+    sized_admin.post("/admin/content/publish")
+    with sized_app.test_request_context("/"):
+        assert size_for(TITLE) == "lg"
+
+
+# --- what the panel is handed ----------------------------------------------------
+
+
+def manifest_of(app) -> dict:
+    client = app.test_client()
+    client.post("/admin/content/login", data={"password": "secreto"})
+    html = client.get("/?edit=1").get_data(as_text=True)
+    match = re.search(r'<script type="application/json" id="ctManifest">(.*?)</script>', html, re.S)
+    raw = match.group(1).replace("\\u003c", "<").replace("\\u003e", ">").replace("\\u0026", "&")
+    return json.loads(raw)
+
+
+def test_the_panel_is_told_which_sizes_it_may_offer(sized_app) -> None:
+    manifest = manifest_of(sized_app)
+    assert [s["token"] for s in manifest["sizes"]] == [step.token for step in SCALE]
+    assert manifest["sizes"][0]["label"] == "Más chico"
+
+
+def test_a_narrowed_scale_reaches_the_panel_narrowed() -> None:
+    manifest = manifest_of(build_app(text_sizes=("sm", "lg")))
+    assert [s["token"] for s in manifest["sizes"]] == ["sm", BASE, "lg"]
+
+
+def test_each_field_carries_its_size(sized_app) -> None:
+    put_size(sized_app, TITLE, "lg")
+    fields = manifest_of(sized_app)["fields"]
+    assert fields[TITLE]["resizable"] is True
+    assert fields[TITLE]["size"] == "lg"
+    assert fields["home.hero.image"]["resizable"] is False
+
+
+def test_a_site_without_sizes_gets_the_payload_it_always_got(app) -> None:
+    manifest = manifest_of(app)
+    assert manifest["sizes"] == []
+    assert "resizable" not in manifest["fields"][TITLE]
+    assert "size" not in manifest["fields"][TITLE]

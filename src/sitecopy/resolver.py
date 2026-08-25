@@ -28,7 +28,7 @@ from sitecopy.registry import Group, Registry
 from sitecopy.sanitizer import safe_href, safe_media_src, sanitize
 from sitecopy.sizes import BASE as BASE_SIZE
 from sitecopy.sizes import classes as size_classes
-from sitecopy.sizes import is_size_key, size_key
+from sitecopy.sizes import is_size_key, key_for, size_key
 from sitecopy.state import current_registry, current_state, current_store
 
 # `?preview=1` on any public URL renders pending drafts — for a logged-in admin only.
@@ -363,6 +363,45 @@ def size_class(key: str, block: bool = False) -> str:
     return size_classes(token, block=block) if token else ""
 
 
+def size_state(key: str) -> dict[str, Any]:
+    """What `field_state` gives for the copy, for that field's SIZE row.
+
+    `live` is `BASE` rather than None when nothing is stored: "the site's own size" is a
+    real answer, and treating it as one is what lets the publish path collapse a
+    "volver a Normal" draft back into no row at all.
+    """
+    row = size_key(key)
+    published, draft = _overrides().get(row, (None, None))
+    live = published if published is not None else BASE_SIZE
+    previous = _previous_values().get(row)
+    return {
+        "row": row,
+        "value": draft if draft is not None else live,
+        "live": live,
+        "draft": draft,
+        "has_draft": draft is not None,
+        "is_overridden": published is not None,
+        "previous": previous,
+        "has_previous": previous is not None and previous != live,
+    }
+
+
+def size_defaults() -> dict[str, str]:
+    """`size:<key> -> BASE` for every resizable field, for `TextStore.publish`.
+
+    Publish collapses a draft equal to the default back into "no override", which is
+    what makes choosing "Normal" DELETE the row instead of storing the word "base" in
+    it. The registry has no default size to give, so it is supplied here.
+    """
+    if not size_scale():
+        return {}
+    return {
+        size_key(key): BASE_SIZE
+        for key, field in current_registry().fields.items()
+        if field.is_resizable
+    }
+
+
 def sizes_active() -> bool:
     """True when anything this request could render carries a size.
 
@@ -608,12 +647,18 @@ def pending_draft_count(group: Group | None = None) -> int:
     # removed key. Counting only registry.fields hid such a draft from the index, so it
     # was never shown, never publishable and never discardable: stuck forever. The
     # site-wide publish/discard now act on the same full set, so this stays honest.
+    #
+    # A pending SIZE counts as its field's pending change, not as one of its own: the
+    # panel lists it on that field's line, and a count the list cannot account for is
+    # the same "you have 3 changes" / two rows on screen bug in a new costume.
     if group is None:
-        return len(current_store().draft_keys())
+        return len({key_for(key) or key for key in current_store().draft_keys()})
     overrides = _overrides()
-    return sum(
-        1 for f in group.fields if overrides.get(f.key, (None, None))[1] is not None
-    )
+
+    def pending(key: str) -> bool:
+        return overrides.get(key, (None, None))[1] is not None
+
+    return sum(1 for f in group.fields if pending(f.key) or pending(size_key(f.key)))
 
 
 def override_count(group: Group) -> int:
