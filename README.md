@@ -130,6 +130,8 @@ registration order, and the editor rewrites the HTML of an `?edit=1` response �
 | `brand`            | —                    | str or callable, shown in the chrome and the SERP card |
 | `site_url`         | `""`                 | canonical origin, for the share/search cards |
 | `external_content` | —                    | `{"selector": …, "message": …}`, see below |
+| `text_sizes`       | `False`              | let the editor change how big a text renders |
+| `text_sizes_css`   | `"inline"`           | `"link"` for a CSP with no `unsafe-inline` styles |
 | `nav`              | `[]`                 | extra links for the bundled chrome |
 | `blueprint_name`   | `"sitecopy"`         | rename to mount two registries on one app |
 
@@ -206,6 +208,9 @@ external_content={
 | `image` | input    | validated image URL/path     | photos, logos, hero images           |
 | `video` | input    | validated video URL/path     | hero clips, product videos           |
 
+Every text type (`line`, `text`, `lines`, `rich`) can also be given a **size** from the
+editor — see [Text sizes](#text-sizes) — once the host turns the feature on.
+
 `rich` accepts only `p h2 h3 ul ol li strong b em i a br`. Everything else is stripped
 (tags dropped, their text kept); `script`/`style`/`iframe`/`svg` are dropped *with*
 their content. Rich values are sanitized on save **and** on render — the second pass is
@@ -263,6 +268,78 @@ is always offered as *“Original”*). History rides the same `db` as the copy;
 
 ---
 
+## Text sizes
+
+Off by default. Turn them on and every text field grows a **Tamaño** control — in the
+visual editor's panel and in the section forms — that changes how big that string renders,
+with no deploy and no CSS from you:
+
+```python
+SiteCopy(app, registry=REGISTRY, db=db, text_sizes=True)
+```
+
+| token  | what the editor reads | renders at |
+|--------|-----------------------|------------|
+| `xs`   | Más chico             | `0.8em`    |
+| `sm`   | Chico                 | `0.9em`    |
+| `base` | Normal                | —          |
+| `lg`   | Grande                | `1.15em`   |
+| `xl`   | Más grande            | `1.35em`   |
+| `2xl`  | Enorme                | `1.6em`    |
+
+**Sizes are relative, never absolute.** A step is a multiple of whatever size the element
+already had, so "un poco más grande" means the same thing on an `<h1>` and on a button,
+and your own responsive type scale keeps deciding the absolute size. An editor cannot
+type `48px` into a field that renders on every breakpoint you have.
+
+**`base` is the absence of a size**, not a value: choosing *Normal* deletes the override,
+the same way "volver al texto original" does for copy. A site that never touches the
+feature stores no rows and ships no CSS.
+
+Offer fewer steps with `text_sizes=("sm", "base", "lg")` (order does not matter; the
+scale's own order is kept, and *Normal* is always offered, or a size could not be
+undone). Keep one field out of it with `TextField(..., resizable=False)` — a legal
+disclaimer that has to stay the size the lawyer approved. `url`, `image` and `video`
+fields are never resizable: they hold a location, not text.
+
+A size rides the copy's own lifecycle — it is stored as a sibling override row, so it
+drafts, previews, publishes, discards and undoes together with the text it belongs to,
+and the editor counts the pair as one change.
+
+### How it reaches the page
+
+A sized value is wrapped at render time: `<span class="sc-s sc-s-lg">…</span>`, or a
+`<div>` for a `rich` value, whose block elements a `<span>` cannot hold. The rules are
+injected as a `<style>` in the `<head>`, holding only the sizes that page uses. Both
+appear **only** where a size is actually stored, so a page with none is byte-for-byte the
+page it always was.
+
+Two things follow from that:
+
+- **The wrapper is a new element in your markup.** A selector like `h1 > strong` or
+  `:first-child` can stop matching the text inside it. Clearing the size removes it again.
+- **The rewrite has to see the response while it is still text.** This was always true of
+  `?edit=1`, but it now matters to every visitor — so if a compression extension is wired
+  after `SiteCopy(...)`, the markers meant for the rewrite reach the browser as empty
+  boxes. Guard it in your own CI:
+
+  ```python
+  from sitecopy.testing import check_response_pipeline
+
+  def test_the_rewrite_still_sees_the_html(app):
+      assert check_response_pipeline(app, "/", key="home.hero.title") == []
+  ```
+
+If your CSP has no `'unsafe-inline'` for styles, pass `text_sizes_css="link"` and the
+whole scale is served as a static file instead. And a host that builds its own `t()`
+(`jinja_globals=False`) never passes through the rewrite at all — use `size_class()`:
+
+```jinja
+<h1 class="{{ size_class('home.hero.title') }}">{{ my_t('home.hero.title') }}</h1>
+```
+
+---
+
 ## Tokens
 
 Any string may embed `{token}`. Unknown tokens are left literal — an editor typing a
@@ -305,6 +382,8 @@ Tokens are interpolated **before** sanitizing, so a token's value is treated as 
 - **Copy with no visible text** — the `<title>`, the meta description, image `alt`s,
   aria-labels — is in the side panel. Clicking an image opens its alt text there.
 - **Unsaved edits travel with you** across pages, and stay listed in the panel.
+- **How big a text renders** is a dropdown beside it, when the site turns
+  [text sizes](#text-sizes) on. The canvas changes as you pick.
 - **Device widths** and **share/search cards** (Google, WhatsApp, Twitter/X) are built
   from the previewed document's own `<title>` and `meta` tags, so there is no second
   implementation of your metadata logic to drift out of sync.
@@ -394,6 +473,16 @@ def test_registry_is_sound():
 
 def test_every_key_is_rendered_and_every_rendered_key_exists(app):
     assert check_templates(REGISTRY, "app/templates") == []
+```
+
+With `text_sizes` on, add the third check — see [Text sizes](#text-sizes) for what it
+catches:
+
+```python
+from sitecopy.testing import check_response_pipeline
+
+def test_the_rewrite_still_sees_the_html(app):
+    assert check_response_pipeline(app, "/", key="home.hero.title") == []
 ```
 
 `check_registry` enforces the contract: unique keys, non-empty defaults that fit their

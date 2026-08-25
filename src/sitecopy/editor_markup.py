@@ -136,8 +136,8 @@ def transform(html: str, edit: bool = True) -> tuple[str, list[str], list[str]]:
                     # Rich fields hold block elements. The host has to be a block too, or
                     # the browser reparents (and loses) what the editor types into it.
                     kind = f' data-t="{field.type}"' if field is not None else ""
-                    # `data-s` is what the in-frame script reads and writes; the class is
-                    # what renders it, so the canvas shows what the public page will.
+                    # `data-s` records which size the node is at; the class is what
+                    # renders it, so the canvas shows what the public page will.
                     sized = (
                         f' data-s="{escape(size)}" class="{escape(size_css_class(size))}"'
                         if size

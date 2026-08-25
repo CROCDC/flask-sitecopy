@@ -39,6 +39,7 @@ worked example of the wiring in the main README:
 | `Por qué {brand}`, `© {year} {brand}`          | site-wide + `{year}` tokens |
 | The product page title `Mochila Cactus · Verdana` | per-call `{name}` token |
 | Clicking a product card says "sale del catálogo" | `external_content` |
+| The **Tamaño** dropdown beside a text in the panel, changing the page as you pick | editable text sizes |
 | Draft → *Previsualizar* → *Publicar cambios*   | the draft/preview/publish flow |
 
 ## How it's wired
