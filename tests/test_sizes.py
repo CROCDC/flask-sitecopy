@@ -852,3 +852,78 @@ def test_a_site_without_sizes_gets_the_payload_it_always_got(app) -> None:
     assert manifest["sizes"] == []
     assert "resizable" not in manifest["fields"][TITLE]
     assert "size" not in manifest["fields"][TITLE]
+
+
+# --- the screen that works with JavaScript off -----------------------------------
+
+
+def group_html(app) -> str:
+    client = app.test_client()
+    client.post("/admin/content/login", data={"password": "secreto"})
+    return client.get("/admin/content/home").get_data(as_text=True)
+
+
+def test_the_form_offers_the_size_next_to_the_text(sized_app) -> None:
+    put_size(sized_app, TITLE, "lg")
+    html = group_html(sized_app)
+    assert f'name="{size_key(TITLE)}"' in html
+    assert '<option value="lg" selected>Grande</option>' in html
+
+
+def test_the_form_offers_no_size_for_a_picture(sized_app) -> None:
+    assert f'name="{size_key("home.hero.image")}"' not in group_html(sized_app)
+
+
+def test_the_form_draws_no_size_control_where_the_feature_is_off(app) -> None:
+    assert 'class="ct-size"' not in group_html(app)
+
+
+def test_posting_the_form_stages_the_size(sized_app, sized_admin) -> None:
+    sized_admin.post(
+        "/admin/content/home",
+        data={"action": "save", TITLE: "Bienvenido a {brand}", size_key(TITLE): "xl"},
+    )
+    assert row(sized_app, TITLE).draft_value == "xl"
+
+
+def test_a_bogus_size_in_the_form_rejects_the_whole_submission(sized_app, sized_admin) -> None:
+    response = sized_admin.post(
+        "/admin/content/home",
+        data={"action": "save", TITLE: "Un título nuevo", size_key(TITLE): "gigante"},
+    )
+    assert response.status_code == 400
+    with sized_app.app_context():
+        assert current_store().get(TITLE) is None
+    assert "ese tamaño no existe" in response.get_data(as_text=True)
+
+
+def test_a_rejected_submission_keeps_the_size_that_was_chosen(sized_admin) -> None:
+    """The screen comes back with what was typed, not with what is stored — losing an
+    unrelated field's choice to someone else's typo is its own bug."""
+    response = sized_admin.post(
+        "/admin/content/home",
+        data={"action": "save", TITLE: "", size_key(TITLE): "xl"},
+    )
+    assert '<option value="xl" selected>Más grande</option>' in response.get_data(as_text=True)
+
+
+def test_publishing_the_section_publishes_its_sizes(sized_app, sized_admin) -> None:
+    sized_admin.post(
+        "/admin/content/home",
+        data={"action": "publish", TITLE: "Bienvenido a {brand}", size_key(TITLE): "sm"},
+    )
+    with sized_app.test_request_context("/"):
+        assert size_for(TITLE) == "sm"
+
+
+def test_discarding_the_section_drops_its_pending_sizes(sized_app, sized_admin) -> None:
+    save(sized_admin, {size_key(TITLE): "lg"})
+    sized_admin.post("/admin/content/home", data={"action": "discard"})
+    assert row(sized_app, TITLE) is None
+
+
+def test_the_sections_pending_count_folds_the_size_into_its_field(sized_app, sized_admin) -> None:
+    save(sized_admin, {TITLE: "Otro título", size_key(TITLE): "lg"})
+    with sized_app.app_context():
+        group = sized_app.extensions["sitecopy"].registry.group_for("home")
+        assert resolver.pending_draft_count(group) == 1

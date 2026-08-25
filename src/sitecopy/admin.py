@@ -43,7 +43,7 @@ from sitecopy.registry import Group, TextField
 from sitecopy.media import sniff
 from sitecopy.sanitizer import safe_href, safe_media_src, sanitize, strip_tags, visible_text
 from sitecopy.sizes import BASE as BASE_SIZE
-from sitecopy.sizes import STEPS, is_size_key, key_for, size_key
+from sitecopy.sizes import STEPS, is_size_key, key_for, size_key, steps_for
 from sitecopy.state import (
     SiteCopyState,
     current_file_store,
@@ -296,6 +296,11 @@ def _with_size_rows(keys: Iterable[str]) -> list[str]:
     return out
 
 
+def _size_steps() -> list[Any]:
+    """The sizes this install offers, for the no-JS screens. Empty = no control drawn."""
+    return steps_for(current_state().text_sizes)
+
+
 def _publish_defaults() -> dict[str, str]:
     """The defaults `TextStore.publish` collapses a draft against.
 
@@ -346,6 +351,20 @@ def _apply_submission(group: Group, form: Any) -> tuple[list[str], list[str], in
         store.set_draft(field.key, None if value == state["live"] else value)
         staged += 1
 
+    # Sizes ride the same submission. Separate loop because a screen may post a size for
+    # a field whose text it did not change (and `restore` posts no text at all).
+    for field in group.fields:
+        name = size_key(field.key)
+        if name not in form:
+            continue
+        token = _normalize_size(form.get(name, ""))
+        error = _validate_size(field, token)
+        if error:
+            _add_error(errors, error_keys, error, field.key)
+            continue
+        _stage_size(field, token)
+        staged += 1
+
     return errors, error_keys, staged
 
 
@@ -364,6 +383,12 @@ def _editor_values(group: Group, form: Any | None = None) -> dict[str, Any]:
         if field.type == "rich":
             haystack = strip_tags(haystack)
         state = dict(state, search_text=f"{field.label} {field.key} {haystack}".lower())
+        # What the size dropdown should show, with a rejected submission winning over
+        # what is stored — same rule the text box above follows.
+        size = resolver.size_state(field.key)["value"]
+        if form is not None and size_key(field.key) in form:
+            size = _normalize_size(form.get(size_key(field.key), ""))
+        state = dict(state, size=size, size_name=size_key(field.key))
         states[field.key] = state
     return states
 
@@ -939,6 +964,7 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
             baseline_prefix=BASELINE_PREFIX,
             invalid_keys=[],
             field_errors={},
+            size_steps=_size_steps(),
         )
 
     @bp.route("/<group_key>", methods=["POST"])
@@ -949,7 +975,7 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
         store = current_store()
 
         if action == "discard":
-            dropped = store.discard_drafts([f.key for f in group.fields])
+            dropped = store.discard_drafts(_with_size_rows(f.key for f in group.fields))
             resolver.save()
             _flash_count(dropped, "Se descartó {n} cambio.", "Se descartaron {n} cambios.")
             return redirect(url_for(f"{state.blueprint_name}.group_edit", group_key=group.key))
@@ -969,6 +995,7 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
                     preview_path=group.resolve_preview_path(),
                     pending=resolver.pending_draft_count(group),
                     baseline_prefix=BASELINE_PREFIX,
+                    size_steps=_size_steps(),
                     invalid_keys=error_keys,
                     # Positionally aligned by `_add_error`; a field fails at most once
                     # per submission, so the keys are unique.
@@ -978,7 +1005,7 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
             )
 
         if action == "publish":
-            keys = [f.key for f in group.fields]
+            keys = _with_size_rows(f.key for f in group.fields)
             problems = _invalid_drafts(keys)
             if problems:
                 # Keep what was just typed (it validated); only the publish is refused.
@@ -989,7 +1016,7 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
                 return redirect(
                     url_for(f"{state.blueprint_name}.group_edit", group_key=group.key)
                 )
-            store.publish(keys, current_registry().defaults)
+            store.publish(keys, _publish_defaults())
             resolver.save()
             _record_media_versions(keys)
             flash("Cambios publicados. Ya se ven en la web.", "success")

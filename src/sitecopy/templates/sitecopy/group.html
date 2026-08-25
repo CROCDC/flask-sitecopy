@@ -107,6 +107,20 @@
             {% endif %}
             {% endif %}
 
+            {# How big the text renders. Only where the host turned sizes on and the
+               field can carry one — a picture's URL has no size. Posts with the form,
+               so it works with JavaScript off like everything else on this screen. #}
+            {% if size_steps and f.is_resizable %}
+            <div class="ct-size">
+                <label class="ct-size-label" for="size-{{ loop.index0 }}-{{ sec.key }}">Tamaño</label>
+                <select id="size-{{ loop.index0 }}-{{ sec.key }}" name="{{ st.size_name }}" class="ct-size-select">
+                    {% for step in size_steps %}
+                    <option value="{{ step.token }}"{% if step.token == st.size %} selected{% endif %}>{{ step.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+
             <div class="ct-field-foot">
                 <span class="ct-counter" data-ct-counter data-max="{{ f.max_length }}" aria-live="polite"></span>
                 {% if st.value != f.default %}

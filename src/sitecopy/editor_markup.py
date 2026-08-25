@@ -350,14 +350,19 @@ def _payload(app: Flask, manifest: dict[str, Any]) -> str:
     )
 
 
-def _size_styles(app: Flask, keys: list[str]) -> str:
+def _size_styles(app: Flask, keys: list[str], edit: bool = False) -> str:
     """The CSS that makes this page's size classes mean something, or "".
 
-    Only the sizes this page actually used: a page with one resized heading carries one
-    rule. A host whose CSP has no "unsafe-inline" for styles asks for
-    `text_sizes_css="link"` instead and gets the whole scale as a static file.
+    On a public page, only the sizes it actually used: one resized heading is one rule.
+    In the canvas, the WHOLE scale — the editor applies a class the moment someone picks
+    a size, and a rule that is not there yet means the page does not visibly change, which
+    reads as a control that does nothing.
+
+    A host whose CSP has no "unsafe-inline" for styles asks for `text_sizes_css="link"`
+    instead and gets the whole scale as a static file either way.
     """
-    css = stylesheet(size_for(key) for key in keys)
+    tokens = current_state().text_sizes if edit else [size_for(key) for key in keys]
+    css = stylesheet(tokens)
     if not css:
         return ""
     if current_state().text_sizes_css == "link":
@@ -403,7 +408,7 @@ def install(app: Flask) -> None:
         if EDIT_START not in html:
             return response
         html, inline, hidden = transform(html, edit=edit)
-        styles = _size_styles(app, inline)
+        styles = _size_styles(app, inline, edit=edit)
         if styles:
             html = _inject(html, styles, "</head>", "</body>")
         if edit:
