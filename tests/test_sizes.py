@@ -6,12 +6,25 @@ with `text_sizes=` rather than using the shared fixtures.
 
 from __future__ import annotations
 
-import pytest
-from flask import session
+from pathlib import Path
 
-from sitecopy import Group, Registry, Section, TextField, resolver, size_class, size_for
+import pytest
+from flask import Flask, session
+
+import sitecopy
+from sitecopy import (
+    Group,
+    MemoryStore,
+    Registry,
+    Section,
+    TextField,
+    resolver,
+    size_class,
+    size_for,
+)
 from sitecopy.auth import SESSION_KEY
-from sitecopy.resolver import size_scale, sizes_active
+from sitecopy.editor_markup import transform
+from sitecopy.resolver import EDIT_END, EDIT_SEP, EDIT_START, size_scale, sizes_active
 from sitecopy.sizes import (
     BASE,
     SCALE,
@@ -25,7 +38,7 @@ from sitecopy.sizes import (
     stylesheet,
 )
 from sitecopy.state import current_store
-from sitecopy.testing import check_registry
+from sitecopy.testing import _hook_order_hint, check_registry, check_response_pipeline
 
 from appfactory import build_app
 
@@ -352,3 +365,271 @@ def test_size_class_is_ready_to_drop_into_a_class_attribute(sized_app) -> None:
 def test_size_class_is_empty_when_there_is_no_size(sized_app) -> None:
     with sized_app.test_request_context("/"):
         assert size_class(TITLE) == ""
+
+
+# --- what reaches the browser ----------------------------------------------------
+
+MARKERS = (EDIT_START, EDIT_SEP, EDIT_END)
+
+
+def home(app) -> str:
+    return app.test_client().get("/").get_data(as_text=True)
+
+
+def test_a_page_with_no_sizes_is_the_page_it_always_was(sized_app) -> None:
+    """The feature has to be free for every page that does not use it."""
+    html = home(sized_app)
+    assert not any(marker in html for marker in MARKERS)
+    assert "sc-s" not in html
+    assert "<style" not in html
+
+
+def test_a_response_that_is_not_html_never_touches_the_store() -> None:
+    """The hook runs on every response of the app. Asking "does anything have a size?"
+    ahead of the cheap guards would turn a JSON endpoint — or a 404, or a static file —
+    into a database query this feature invented."""
+
+    class CountingStore(MemoryStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.reads = 0
+
+        def as_map(self):
+            self.reads += 1
+            return super().as_map()
+
+    store = CountingStore()
+    app = build_app(store=store, text_sizes=True)
+
+    @app.route("/api")
+    def api():
+        return {"ok": True}
+
+    store.reads = 0
+    assert app.test_client().get("/api").status_code == 200
+    assert store.reads == 0
+
+
+def test_a_sized_text_is_wrapped_and_the_rule_travels_with_it(sized_app) -> None:
+    put_size(sized_app, TITLE, "lg")
+    html = home(sized_app)
+    assert '<span class="sc-s sc-s-lg">Bienvenido a Acme</span>' in html
+    assert "sc-s-lg{font-size:1.15em}" in html
+
+
+def test_the_markers_never_reach_the_browser(sized_app) -> None:
+    """They exist only so the hook can tell where a value landed. Shipped, they are
+    empty boxes on a public page — which is what `check_response_pipeline` guards."""
+    put_size(sized_app, TITLE, "lg")
+    assert not any(marker in home(sized_app) for marker in MARKERS)
+
+
+def test_only_the_rules_the_page_uses_are_shipped(sized_app) -> None:
+    put_size(sized_app, TITLE, "lg")
+    html = home(sized_app)
+    assert "sc-s-xl" not in html
+    assert "sc-s-2xl" not in html
+
+
+def test_the_rule_lands_in_the_head(sized_app) -> None:
+    put_size(sized_app, TITLE, "lg")
+    html = home(sized_app)
+    assert html.index("<style>") < html.index("</head>")
+
+
+def test_a_value_that_landed_in_an_attribute_is_not_wrapped(sized_app) -> None:
+    """There is nowhere to put a wrapper inside `alt="…"`, so the size is dropped —
+    the same call the editor markup already makes for the editing chrome."""
+    put_size(sized_app, "home.hero.alt", "xl")
+    html = home(sized_app)
+    assert 'alt="Una foto"' in html
+    assert "sc-s" not in html
+
+
+def test_a_value_inside_the_title_is_not_wrapped(sized_app) -> None:
+    put_size(sized_app, "home.meta.title", "xl")
+    html = home(sized_app)
+    assert "<title>Acme · inicio</title>" in html
+    assert "sc-s" not in html
+
+
+def test_a_serialized_value_stays_serialized(sized_app) -> None:
+    """`t_plain` feeds inline JSON. A wrapper there would be literal text inside a
+    string, and the size is invisible anyway."""
+    put_size(sized_app, TITLE, "lg")
+    html = home(sized_app)
+    assert '{"label": "Bienvenido a Acme"}' in html
+
+
+def test_a_rich_value_is_wrapped_in_a_block(sized_app) -> None:
+    put_size(sized_app, "page.about.body", "lg")
+    html = sized_app.test_client().get("/nosotros").get_data(as_text=True)
+    assert '<div class="sc-s-block sc-s-lg">' in html
+    assert "sc-s-block{display:block}" in html
+
+
+def test_every_item_of_a_list_carries_the_size(sized_app) -> None:
+    put_size(sized_app, "home.hero.bullets", "sm")
+    html = home(sized_app)
+    assert html.count('<span class="sc-s sc-s-sm">') == 3
+
+
+def test_a_sized_page_is_still_not_an_editor(sized_app) -> None:
+    """Only `?edit=1` gets the canvas: the manifest and the editor's scripts have no
+    business on a public page."""
+    put_size(sized_app, TITLE, "lg")
+    html = home(sized_app)
+    assert "ctManifest" not in html
+    assert "<ct-t" not in html
+    assert "editor-frame.js" not in html
+
+
+def test_a_drafted_size_reaches_only_the_preview(sized_app) -> None:
+    put_size(sized_app, TITLE, "lg", published=False)
+    client = sized_app.test_client()
+    assert "sc-s" not in client.get("/").get_data(as_text=True)
+    client.post("/admin/content/login", data={"password": "secreto"})
+    assert "sc-s-lg" in client.get("/?preview=1").get_data(as_text=True)
+
+
+def test_the_canvas_shows_the_size_it_is_editing(sized_app) -> None:
+    put_size(sized_app, TITLE, "lg")
+    client = sized_app.test_client()
+    client.post("/admin/content/login", data={"password": "secreto"})
+    html = client.get("/?edit=1").get_data(as_text=True)
+    assert 'data-s="lg"' in html
+    assert 'class="sc-s-lg"' in html
+    # The canvas keeps its own wrapper: <ct-t> is what the in-frame script binds to.
+    assert "<span class=\"sc-s" not in html
+
+
+def test_edit_mode_is_untouched_where_sizes_are_off(app) -> None:
+    client = app.test_client()
+    client.post("/admin/content/login", data={"password": "secreto"})
+    html = client.get("/?edit=1").get_data(as_text=True)
+    assert "<ct-t" in html
+    assert "data-s=" not in html
+    assert "sc-s" not in html
+
+
+def test_a_strict_csp_can_have_the_scale_as_a_file() -> None:
+    """`text_sizes_css="link"` for a host whose CSP has no "unsafe-inline" for styles."""
+    app = build_app(text_sizes=True, text_sizes_css="link")
+    put_size(app, TITLE, "lg")
+    html = home(app)
+    assert "css/sitecopy-sizes.css" in html
+    assert "<style>" not in html
+    assert 'class="sc-s sc-s-lg"' in html
+
+
+def test_an_unknown_css_mode_fails_at_boot() -> None:
+    with pytest.raises(ValueError):
+        build_app(text_sizes=True, text_sizes_css="magia")
+
+
+def test_the_shipped_stylesheet_says_what_the_scale_says() -> None:
+    """`link` mode serves a hand-readable file; it must not drift from sizes.py."""
+    css = (
+        Path(sitecopy.__file__).parent / "static" / "css" / "sitecopy-sizes.css"
+    ).read_text(encoding="utf-8")
+    for step in SCALE:
+        if step.token == BASE:
+            assert f".sc-s-{step.token} " not in css
+            continue
+        assert f".sc-s-{step.token} {{ font-size: {step.css}; }}" in css
+
+
+# --- the guard the host runs in its own CI ---------------------------------------
+
+
+def test_a_well_wired_app_passes(sized_app) -> None:
+    assert check_response_pipeline(sized_app, "/", key=TITLE) == []
+
+
+def test_the_check_leaves_the_store_the_way_it_found_it(sized_app) -> None:
+    put_size(sized_app, TITLE, "sm")
+    check_response_pipeline(sized_app, "/", key=TITLE)
+    with sized_app.test_request_context("/"):
+        assert size_for(TITLE) == "sm"
+
+
+def test_the_check_catches_a_response_sitecopy_never_got_to_read() -> None:
+    """The real shape of this bug is `Compress(app)` wired after `SiteCopy(app)`: the
+    body is already compressed by the time the rewrite runs, so the markers ship."""
+    app = build_app(text_sizes=True)
+
+    @app.after_request
+    def _pretend_to_compress(response):  # registered last => runs first
+        response.direct_passthrough = True
+        return response
+
+    problems = check_response_pipeline(app, "/", key=TITLE)
+    assert len(problems) == 1
+    assert "markers" in problems[0]
+    assert "_pretend_to_compress" in problems[0]
+
+
+def test_the_check_says_so_when_sizes_are_off(app) -> None:
+    assert check_response_pipeline(app, "/") == ["text_sizes is off on this app, so there is no rewrite to check"]
+
+
+def test_the_check_names_a_field_that_is_not_on_the_page(sized_app) -> None:
+    problems = check_response_pipeline(sized_app, "/", key="home.hero.alt")
+    assert len(problems) == 1 and "not rendered as visible text" in problems[0]
+
+
+def test_the_check_needs_a_real_field(sized_app) -> None:
+    assert check_response_pipeline(sized_app, "/", key="no.existe") != []
+
+
+def test_the_check_wants_an_html_page(sized_app) -> None:
+    problems = check_response_pipeline(sized_app, "/no-existe", key=TITLE)
+    assert len(problems) == 1 and "404" in problems[0]
+
+
+def test_the_check_picks_a_field_when_it_is_given_none(sized_app) -> None:
+    """The default is the first resizable field in the registry — here a token field,
+    which reaches the page through other strings rather than a `t()` call of its own,
+    so the message says to name one the page shows."""
+    problems = check_response_pipeline(sized_app, "/")
+    assert len(problems) == 1 and "global.brand" in problems[0]
+
+
+def test_the_check_needs_the_extension() -> None:
+    assert check_response_pipeline(Flask(__name__)) == ["sitecopy is not installed on this app"]
+
+
+def test_the_check_needs_a_size_to_stage() -> None:
+    app = build_app(text_sizes=("base",))
+    assert check_response_pipeline(app, "/") == [
+        "this install offers no size other than the default one"
+    ]
+
+
+def test_the_check_needs_a_store_it_can_stage_a_size_in() -> None:
+    """`set_published`/`delete` are conveniences the library never calls at runtime, so
+    a custom store may not have them."""
+
+    class BareStore(MemoryStore):
+        set_published = None
+
+    app = build_app(store=BareStore(), text_sizes=True)
+    assert "set_published" in check_response_pipeline(app, "/", key=TITLE)[0]
+
+
+def test_the_hint_says_where_to_look_when_the_hook_order_is_fine(sized_app) -> None:
+    assert "middleware" in _hook_order_hint(sized_app)
+
+
+def test_the_hint_says_so_when_the_hook_is_not_there_at_all() -> None:
+    assert "not installed" in _hook_order_hint(Flask(__name__))
+
+
+def test_a_marked_but_unsized_value_degrades_to_its_own_text(sized_app) -> None:
+    """Defence in depth: if the size went away between the render and this pass, the
+    text is emitted alone rather than inside an empty wrapper."""
+    with sized_app.test_request_context("/"):
+        html, _inline, _hidden = transform(
+            f"<p>{EDIT_START}{TITLE}{EDIT_SEP}Hola{EDIT_END}</p>", edit=False
+        )
+    assert html == "<p>Hola</p>"

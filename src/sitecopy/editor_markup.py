@@ -40,8 +40,13 @@ from sitecopy.resolver import (
     field_state,
     is_edit_mode,
     rendered_keys,
+    size_for,
+    sizes_active,
 )
 from sitecopy.sanitizer import sanitize
+from sitecopy.sizes import classes as size_classes
+from sitecopy.sizes import css_class as size_css_class
+from sitecopy.sizes import stylesheet
 from sitecopy.state import current_registry, current_state
 
 # Elements whose content is raw text: a wrapper element inside them would render as
@@ -68,8 +73,15 @@ def _with_keys_attr(tag_html: str, labels: list[str]) -> str:
     return tag_html + attr
 
 
-def transform(html: str) -> tuple[str, list[str], list[str]]:
-    """Rewrite edit markers. Returns (html, inline keys, panel-only keys)."""
+def transform(html: str, edit: bool = True) -> tuple[str, list[str], list[str]]:
+    """Rewrite edit markers. Returns (html, inline keys, panel-only keys).
+
+    `edit=False` is the public pass: the page is not a canvas, so a marked value
+    becomes a size wrapper (or just its own text) instead of a `<ct-t>`. Everything
+    about WHERE a value landed — an attribute, a `<title>`, a comment — is decided the
+    same way in both passes, which is the whole reason the size rides this machinery
+    rather than being spliced in by `t()`.
+    """
     fields = current_registry().fields
     out: list[str] = []
     inline: list[str] = []
@@ -115,11 +127,36 @@ def transform(html: str) -> tuple[str, list[str], list[str]]:
                 out.append(value)
                 hidden.append(key)
             else:
-                # Rich fields hold block elements. The host has to be a block too, or
-                # the browser reparents (and loses) what the editor types into it.
                 field = fields.get(key)
-                kind = f' data-t="{field.type}"' if field is not None else ""
-                out.append(f'<ct-t data-k="{escape(label)}"{kind}>{value}</ct-t>')
+                # Re-read per occurrence rather than trusting the marker: `size_for` is
+                # the allow-list check, so nothing that is not a token of the active
+                # scale can reach a class attribute.
+                size = size_for(key)
+                if edit:
+                    # Rich fields hold block elements. The host has to be a block too, or
+                    # the browser reparents (and loses) what the editor types into it.
+                    kind = f' data-t="{field.type}"' if field is not None else ""
+                    # `data-s` is what the in-frame script reads and writes; the class is
+                    # what renders it, so the canvas shows what the public page will.
+                    sized = (
+                        f' data-s="{escape(size)}" class="{escape(size_css_class(size))}"'
+                        if size
+                        else ""
+                    )
+                    out.append(f'<ct-t data-k="{escape(label)}"{kind}{sized}>{value}</ct-t>')
+                elif size:
+                    # A `rich` value carries <p>/<h2>/<ul>: a <span> around blocks is
+                    # markup the browser reparents, so that one gets a <div>.
+                    block = field is not None and field.type == "rich"
+                    tag = "div" if block else "span"
+                    out.append(
+                        f'<{tag} class="{escape(size_classes(size, block=block))}">'
+                        f"{value}</{tag}>"
+                    )
+                else:
+                    # Marked but unsized — the size was cleared between the render and
+                    # this pass. Emit the text alone rather than an empty wrapper.
+                    out.append(value)
                 inline.append(key)
             i = end + 1
             continue
@@ -287,30 +324,65 @@ def _payload(app: Flask, manifest: dict[str, Any]) -> str:
     )
 
 
+def _size_styles(app: Flask, keys: list[str]) -> str:
+    """The CSS that makes this page's size classes mean something, or "".
+
+    Only the sizes this page actually used: a page with one resized heading carries one
+    rule. A host whose CSP has no "unsafe-inline" for styles asks for
+    `text_sizes_css="link"` instead and gets the whole scale as a static file.
+    """
+    css = stylesheet(size_for(key) for key in keys)
+    if not css:
+        return ""
+    if current_state().text_sizes_css == "link":
+        return f'<link rel="stylesheet" href="{_asset(app, "css/sitecopy-sizes.css")}">'
+    return f"<style>{css}</style>"
+
+
+def _inject(html: str, snippet: str, *tags: str) -> str:
+    """Put `snippet` just before the first of `tags` that exists, else at the end.
+
+    Never at the START: a `<style>` ahead of the doctype puts the whole page into quirks
+    mode, which is a far worse bug than a stylesheet that arrives late.
+    """
+    for tag in tags:
+        if tag in html:
+            return html.replace(tag, snippet + tag, 1)
+    return html + snippet
+
+
 def install(app: Flask) -> None:
-    """Rewrite edit-mode responses.
+    """Rewrite edit-mode responses, and public ones that carry a text size.
 
     Register this AFTER any compression extension: Flask runs `after_request` hooks in
     reverse registration order, so the last one registered is the first to see the
-    response — which is the only point at which it is still text.
+    response — which is the only point at which it is still text. That ordering used to
+    matter only to an admin in `?edit=1`; with sizes turned on it matters to every
+    visitor, which is what `testing.check_response_pipeline` exists to catch.
     """
 
     @app.after_request
     def _apply_editor_markup(response: Any) -> Any:
-        if not is_edit_mode():
-            return response
+        # Cheapest guard first, and deliberately before `sizes_active`: that one reads
+        # the overrides, which on a response that never rendered any copy — a JSON
+        # endpoint, a static file, a 404 — would be a database query this hook invented.
         if response.direct_passthrough or response.mimetype != "text/html":
+            return response
+        edit = is_edit_mode()
+        # Scoped to installs that turned sizes on AND have one stored: otherwise this
+        # hook would start rewriting public HTML for every site, which is not its job.
+        if not edit and not sizes_active():
             return response
         html = response.get_data(as_text=True)
         if EDIT_START not in html:
             return response
-        html, inline, hidden = transform(html)
-        manifest = build_manifest(_request_path(), inline, hidden)
-        payload = _payload(app, manifest)
-        if "</body>" in html:
-            html = html.replace("</body>", payload + "</body>", 1)
-        else:
-            html += payload
+        html, inline, hidden = transform(html, edit=edit)
+        styles = _size_styles(app, inline)
+        if styles:
+            html = _inject(html, styles, "</head>", "</body>")
+        if edit:
+            manifest = build_manifest(_request_path(), inline, hidden)
+            html = _inject(html, _payload(app, manifest), "</body>")
         response.set_data(html)
         return response
 

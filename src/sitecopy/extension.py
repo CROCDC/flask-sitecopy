@@ -45,6 +45,7 @@ _OPTIONS = frozenset(
         "upload_max_bytes",
         # Editable text sizes — off unless the host asks for them. See sitecopy/sizes.py.
         "text_sizes",
+        "text_sizes_css",
     }
 )
 
@@ -113,6 +114,9 @@ class SiteCopy:
         # Raises on an unknown token: a typo here should fail at boot rather than
         # render a panel offering a size that resolves to nothing.
         text_sizes = normalize_scale(options.get("text_sizes"))
+        text_sizes_css = str(options.get("text_sizes_css") or "inline")
+        if text_sizes_css not in ("inline", "link"):
+            raise ValueError('text_sizes_css must be "inline" or "link"')
 
         file_store, media_versions = _build_media(app, options, db)
         upload_max_bytes = {**DEFAULT_UPLOAD_MAX_BYTES, **(options.get("upload_max_bytes") or {})}
@@ -162,6 +166,7 @@ class SiteCopy:
             media_versions=media_versions,
             upload_max_bytes=upload_max_bytes,
             text_sizes=text_sizes,
+            text_sizes_css=text_sizes_css,
         )
 
         app.extensions[EXTENSION_KEY] = state

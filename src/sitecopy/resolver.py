@@ -497,10 +497,23 @@ def _wrap(key: str, value: str | Markup, line: int | None = None) -> Markup:
     return Markup(f"{EDIT_START}{label}{EDIT_SEP}") + value + Markup(EDIT_END)
 
 
+def _needs_marker(key: str) -> bool:
+    """Whether this render has to tag `key` with its key for the response hook.
+
+    Edit mode tags everything. A public render tags only what carries a SIZE: the hook
+    is what turns the tag into a wrapper (and what knows to drop it when the value
+    landed in an attribute or a `<title>`, where a wrapper cannot go). Anything else is
+    emitted exactly as it was before this feature existed.
+    """
+    if key not in current_registry().fields:
+        return False
+    return is_edit_mode() or bool(size_for(key))
+
+
 def editable(key: str, **params: Any) -> str | Markup:
     """`t()` for templates: identical output, plus the editor tag in edit mode."""
     value = t(key, **params)
-    if not is_edit_mode() or key not in current_registry().fields:
+    if not _needs_marker(key):
         return value
     return _wrap(key, value)
 
@@ -522,7 +535,7 @@ def editable_lines(key: str, **params: Any) -> list[str] | list[Markup]:
     filtered list therefore made a click land on a different phrase, and publishing it
     overwrote the wrong one while leaving the clicked one untouched.
     """
-    if not is_edit_mode() or key not in current_registry().fields:
+    if not _needs_marker(key):
         return t_lines(key, **params)
     wrapped: list[Markup] = []
     # `_raw_lines` numbers by the RAW value (split before interpolation), exactly as the

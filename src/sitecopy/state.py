@@ -62,6 +62,10 @@ class SiteCopyState:
     # means the feature is off: no size is ever resolved, stored or rendered, and the
     # response rewrite stays edit-mode-only, exactly as before. See sitecopy/sizes.py.
     text_sizes: tuple[str, ...] = ()
+    # How the size rules reach the page: "inline" (a <style> holding only the rules that
+    # page uses) or "link" (the whole scale as a static file), for a host whose CSP has
+    # no "unsafe-inline" for styles.
+    text_sizes_css: str = "inline"
 
 
 def current_state() -> SiteCopyState:
