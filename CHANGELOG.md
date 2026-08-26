@@ -37,6 +37,21 @@ All notable changes to **flask-sitecopy** are documented here. The format follow
   stages a real size, fetches the page as a visitor, and names what got to the response
   first.
 
+### Fixed
+
+- **The section forms could not be submitted from a browser** whenever the section held an
+  `image` or `video` field on a site path. Those rendered as `<input type="url">`, and the
+  browser's own constraint validation rejects `/static/hero.jpg` — the value this library
+  documents and accepts — so it refused to send the form at all, with JavaScript or
+  without. A picture on a site path made the whole screen unsaveable, and the only clue
+  was a tooltip on an input nobody was editing. Media fields are now `type="text"` with
+  `inputmode="url"`, which keeps the URL keyboard on a phone; `url` fields stay
+  `type="url"`, since those really must be absolute links.
+
+  It went unnoticed because every test posted to the endpoint directly. The browser suite
+  now checks that the form is one the browser is willing to send, and drives a save with
+  the editor's script blocked.
+
 ### Changed
 
 - A sized value is wrapped at render time in `<span class="sc-s sc-s-lg">` (a `<div>` for

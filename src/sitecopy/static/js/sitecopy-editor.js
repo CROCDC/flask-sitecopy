@@ -606,7 +606,13 @@
     const multiline = field.type === "text" || field.type === "lines" || field.type === "rich";
     const input = document.createElement(multiline ? "textarea" : "input");
     input.id = "ed-" + key;
-    if (!multiline) input.type = field.type === "url" || isMedia ? "url" : "text";
+    // A media field is text, not type="url": its value may be a site path, which the
+    // browser marks invalid (and, in the form screens, refuses to submit). `inputmode`
+    // keeps the URL keyboard on a phone without the validation.
+    if (!multiline) {
+      input.type = field.type === "url" ? "url" : "text";
+      if (isMedia) input.inputMode = "url";
+    }
     else input.rows = field.type === "rich" ? 6 : 3;
     input.value = valueOf(key);
     input.maxLength = field.max;

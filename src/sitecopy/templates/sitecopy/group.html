@@ -75,7 +75,16 @@
                       class="ct-input ct-input-{{ f.type }}">{{ st.value }}</textarea>
             {% else %}
             {% set is_media = f.type in ('image', 'video') %}
-            <input type="{{ 'url' if f.type in ('url', 'image', 'video') else 'text' }}"
+            {# NOT type="url" for image/video. A media field holds a LOCATION, and a site
+               path (`/static/hero.jpg`) is the documented, server-accepted value — but the
+               browser's own constraint validation rejects it as a URL and then refuses to
+               submit the whole form. One picture on a site path made the entire screen
+               unsaveable, JavaScript or no JavaScript, with a tooltip on an input nobody
+               was editing as the only clue. `inputmode` keeps the URL keyboard on a phone.
+               A `url` field stays type="url": those really must be absolute http(s), and
+               the server rejects anything else. #}
+            <input type="{{ 'url' if f.type == 'url' else 'text' }}"
+                   {% if is_media %}inputmode="url"{% endif %}
                    id="fld-{{ loop.index0 }}-{{ sec.key }}" name="{{ f.key }}"
                    value="{{ st.value }}" maxlength="{{ f.max_length }}"
                    {% if invalid %}aria-invalid="true"{% endif %}

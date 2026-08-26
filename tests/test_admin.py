@@ -608,3 +608,39 @@ def test_publishing_everything_ignores_a_draft_left_by_a_key_that_was_renamed(
     admin.post("/admin/content/publish")
     with app.app_context():
         assert current_store().draft_keys() == []
+
+
+# --- what the browser is willing to send -----------------------------------------
+
+
+def test_a_media_field_is_not_typed_as_a_url_in_the_form(admin) -> None:
+    """A media field holds a LOCATION, and a site path is the documented value — but
+    `type="url"` makes the browser reject `/static/hero.jpg` and then refuse to submit
+    the WHOLE form. One picture on a site path made the screen unsaveable."""
+    html = admin.get("/admin/content/home").get_data(as_text=True)
+    tag = re.search(r'<input[^>]*name="home\.hero\.image"[^>]*>', html, re.S).group(0)
+    assert 'type="text"' in tag
+    assert 'inputmode="url"' in tag
+
+
+def test_a_url_field_is_still_typed_as_a_url(admin) -> None:
+    """Those really must be absolute http(s) — the server says so too — so the browser's
+    own check is help, not an obstacle."""
+    html = admin.get("/admin/content/home").get_data(as_text=True)
+    tag = re.search(r'<input[^>]*name="global\.site"[^>]*>', html, re.S).group(0)
+    assert 'type="url"' in tag
+
+
+def test_no_field_on_a_section_screen_ships_a_value_its_own_input_would_reject(admin) -> None:
+    """The general form of the bug above: whatever the server renders back into an input,
+    the browser has to be willing to send again untouched. A `type="url"` input carrying
+    anything but an absolute link vetoes the submit for the whole screen."""
+    html = admin.get("/admin/content/home").get_data(as_text=True)
+    offenders = []
+    for tag in re.findall(r'<input[^>]*class="ct-input"[^>]*>', html, re.S):
+        if 'type="url"' not in tag:
+            continue
+        value = (re.search(r'value="([^"]*)"', tag) or re.match("", "")).group(1)
+        if value and not value.lower().startswith(("http://", "https://")):
+            offenders.append(tag)
+    assert offenders == []
