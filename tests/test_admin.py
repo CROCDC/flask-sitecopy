@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from sitecopy import resolver
@@ -426,5 +428,183 @@ def test_publishing_everything_clears_an_orphaned_draft(app, admin) -> None:
     draft(app, "ghost.removed", "huérfano")
     admin.post("/admin/content/publish")
     assert state_of(app, "home.hero.body")["published"] == "vivo"
+    with app.app_context():
+        assert current_store().draft_keys() == []
+
+
+# --- validation paths nothing had exercised --------------------------------------
+
+
+def test_markup_with_no_text_in_it_is_refused(admin) -> None:
+    """`<p></p>` and friends: a page of markup with nothing to read is a blank page."""
+    response = admin.post(
+        "/admin/content/save", json={"changes": {"page.about.body": "<p></p><ul></ul>"}}
+    )
+    assert response.status_code == 400
+    assert "quedó sin texto" in response.get_json()["errors"][0]
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("home.hero.image", "/static/una foto.jpg"),
+        ("home.hero.clip", "/static/un clip.mp4"),
+    ],
+)
+def test_a_media_url_with_spaces_is_refused_rather_than_silently_trimmed(admin, key, value) -> None:
+    """The guard strips whitespace to defeat `java\\tscript:`, so storing the original
+    would turn a pasted URL with a space into a 404 on every page."""
+    response = admin.post("/admin/content/save", json={"changes": {key: value}})
+    assert response.status_code == 400
+    assert "espacios o caracteres raros" in response.get_json()["errors"][0]
+
+
+def test_a_text_the_registry_no_longer_has_is_refused(admin) -> None:
+    response = admin.post("/admin/content/save", json={"changes": {"se.fue": "Hola"}})
+    assert response.status_code == 400
+    assert "ya no existe" in response.get_json()["errors"][0]
+
+
+# --- the section form's own paths ------------------------------------------------
+
+
+def test_the_section_form_sanitizes_a_rich_value_on_the_way_in(app, admin) -> None:
+    admin.post(
+        "/admin/content/page",
+        data={
+            "action": "save",
+            "page.about.title": "Nosotros",
+            "page.about.body": "<p>Hola <script>alert(1)</script><b>gente</b></p>",
+        },
+    )
+    stored = state_of(app, "page.about.body")["draft"]
+    assert "<script>" not in stored
+    assert "<b>gente</b>" in stored
+
+
+def test_a_rich_value_broken_enough_to_lose_its_text_is_refused(app, admin) -> None:
+    """An unterminated <script> takes the rest of the value with it, and the result is
+    what gets PERSISTED — so the page silently loses its content."""
+    response = admin.post(
+        "/admin/content/page",
+        data={
+            "action": "save",
+            "page.about.title": "Nosotros",
+            "page.about.body": "<p>Hola</p><script>y acá se pierde todo lo que sigue, que es bastante",
+        },
+    )
+    assert response.status_code == 400
+    assert state_of(app, "page.about.body")["draft"] is None
+
+
+def test_the_section_screen_searches_a_rich_field_by_its_words_not_its_markup(admin) -> None:
+    """Otherwise searching "Instagram" hits every paragraph that merely links to it —
+    and searching "p" hits every paragraph there is."""
+    html = admin.get("/admin/content/page").get_data(as_text=True)
+    haystack = re.search(r'data-ct-search="([^"]*historia[^"]*)"', html, re.I).group(1)
+    assert "larga" in haystack
+    assert "h2" not in haystack and "&lt;" not in haystack
+
+
+def test_the_section_publish_is_blocked_by_a_parked_draft_that_no_longer_validates(
+    app, admin
+) -> None:
+    """Publishing does not re-run the save-time checks, and it publishes drafts this
+    request never wrote."""
+    draft(app, "home.hero.title", "x" * 500)
+    response = admin.post(
+        "/admin/content/home", data={"action": "publish"}, follow_redirects=True
+    )
+    assert "No publicamos nada" in response.get_data(as_text=True)
+    assert state_of(app, "home.hero.title")["published"] is None
+
+
+# --- undo, when there is nothing to undo -----------------------------------------
+
+
+def test_undo_says_so_when_no_key_it_was_given_exists(admin) -> None:
+    response = admin.post("/admin/content/revert", json={"keys": ["se.fue"]})
+    assert response.status_code == 400
+    assert "no existe" in response.get_json()["errors"][0]
+
+
+def test_undo_on_a_key_that_was_never_published_reports_nothing_to_go_back_to(
+    app, admin
+) -> None:
+    response = admin.post("/admin/content/revert", json={"keys": ["home.hero.title"]})
+    assert response.status_code == 400
+    assert "versión anterior" in response.get_json()["errors"][0]
+
+
+def test_undo_that_would_change_nothing_is_not_an_undo(app, admin) -> None:
+    """A row that holds exactly the registry default — seeded, or written straight into
+    the table — has a step back that lands where it already is. Drafting it would put a
+    no-op in the publish counter with nothing to publish."""
+    publish(app, "home.hero.title", "Bienvenido a {brand}")
+    response = admin.post("/admin/content/revert", json={"keys": ["home.hero.title"]})
+    assert response.status_code == 400
+    assert "versión anterior" in response.get_json()["errors"][0]
+
+
+# --- the page picker -------------------------------------------------------------
+
+
+def test_the_page_picker_skips_the_apps_own_static_routes() -> None:
+    """They are files, not pages: loading one into the canvas shows a stylesheet."""
+    app = build_app()
+
+    @app.route("/static/algo")
+    def static_algo():
+        return "no soy una página"
+
+    client = app.test_client()
+    client.post("/admin/content/login", data={"password": "secreto"})
+    html = client.get("/admin/content/").get_data(as_text=True)
+    assert "/static/algo" not in html
+
+
+# --- the bundled login -----------------------------------------------------------
+
+
+def test_logging_in_again_just_goes_to_the_editor(admin) -> None:
+    response = admin.get("/admin/content/login")
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/content/")
+
+
+def test_an_expired_session_answers_json_to_an_xhr_too(client) -> None:
+    """A fetch() gets JSON so the editor can say "your session expired". So does an
+    XMLHttpRequest, which is what an upload from an older browser sends."""
+    response = client.get(
+        "/admin/content/", headers={"X-Requested-With": "XMLHttpRequest"}
+    )
+    assert response.status_code == 401
+    assert response.get_json()["reason"] == "auth"
+
+
+def test_publishing_skips_a_key_whose_draft_went_away_between_the_check_and_the_write(
+    app, admin
+) -> None:
+    """`_invalid_drafts` walks the store's pending list, and a row can hold a key with
+    no draft on it — one that was published or discarded a moment ago."""
+    draft(app, "home.hero.title", "Algo")
+    with app.app_context():
+        current_store().set_draft("home.hero.title", None)
+        current_store().set_published("home.hero.title", "Ya publicado")
+        resolver.save()
+    response = admin.post(
+        "/admin/content/save",
+        json={"changes": {}, "action": "publish", "keys": ["home.hero.title"]},
+    )
+    assert response.get_json()["ok"] is True
+
+
+def test_publishing_everything_ignores_a_draft_left_by_a_key_that_was_renamed(
+    app, admin
+) -> None:
+    """Nothing renders it, so it can never be published; it used to keep the "sin
+    publicar" count above zero forever."""
+    draft(app, "se.fue", "Huérfano")
+    admin.post("/admin/content/publish")
     with app.app_context():
         assert current_store().draft_keys() == []

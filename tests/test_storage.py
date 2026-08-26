@@ -226,3 +226,58 @@ def test_get_returns_a_copy_not_the_stored_row(store) -> None:
     got = store.get("a")
     got.published_value = "MODIFICADO"
     assert store.get("a").published_value == "vivo"
+
+
+# --- rows that stop carrying information go away -------------------------------
+
+
+def test_publishing_a_draft_that_matches_what_is_live_leaves_no_row_behind(store) -> None:
+    """It is consumed, nothing changes, and the row that only held it is deleted —
+    otherwise "no pending changes" would be a table full of empty rows."""
+    store.set_draft("a", DEFAULTS["a"])
+    assert store.publish(["a"], DEFAULTS) == 0
+    assert store.get("a") is None
+
+
+def test_discarding_the_only_thing_a_row_held_deletes_it(store) -> None:
+    store.set_draft("a", "algo")
+    assert store.discard_drafts(["a"]) == 1
+    assert store.get("a") is None
+
+
+# --- ensure_schema, on the databases that are not SQLite ------------------------
+
+
+def test_a_real_database_is_left_to_its_own_migrations(monkeypatch) -> None:
+    """The column repair below is a PRAGMA, which is SQLite-only. On Postgres or MySQL
+    a project has a migration tool, and guessing at ALTER TABLE there is not our job."""
+    app = build_app()
+    with app.app_context():
+        store = current_store()
+        monkeypatch.setattr(store.db.engine.dialect, "name", "postgresql")
+        calls = []
+        monkeypatch.setattr(
+            store.db.session, "execute", lambda *a, **k: calls.append(a) or []
+        )
+        store.ensure_schema()
+        assert calls == []
+
+
+def test_a_failed_column_repair_is_rolled_back_and_raised(monkeypatch) -> None:
+    """It must never block boot silently: a half-applied repair that nobody hears about
+    is a database that fails on the first read instead of at startup."""
+    app = build_app()
+    with app.app_context():
+        store = current_store()
+        rolled_back = []
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("no se pudo")
+
+        monkeypatch.setattr(store.db.session, "execute", boom)
+        monkeypatch.setattr(
+            store.db.session, "rollback", lambda: rolled_back.append(True)
+        )
+        with pytest.raises(RuntimeError):
+            store.ensure_schema()
+        assert rolled_back == [True]

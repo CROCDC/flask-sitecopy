@@ -927,3 +927,15 @@ def test_the_sections_pending_count_folds_the_size_into_its_field(sized_app, siz
     with sized_app.app_context():
         group = sized_app.extensions["sitecopy"].registry.group_for("home")
         assert resolver.pending_draft_count(group) == 1
+
+
+def test_undo_skips_a_size_whose_step_back_is_where_it_already_is(sized_app, sized_admin) -> None:
+    """A row holding the literal "base" — a manual UPDATE, a restored backup, a draft
+    from before Normal learned to delete the row — already renders at the site's own
+    size, so stepping back would stage a change that changes nothing."""
+    with sized_app.app_context():
+        current_store().set_published(TITLE, "Publicado")
+        current_store().set_published(size_key(TITLE), BASE)
+        resolver.save()
+    response = sized_admin.post("/admin/content/revert", json={"keys": [TITLE]})
+    assert response.get_json()["sizes"] == {}

@@ -62,7 +62,8 @@ source = ["sitecopy"]
 
 [tool.coverage.report]
 # Branch coverage (stricter than line coverage) on the current baseline. This is a
-# ratchet: it only moves up. Each testing phase that lands raises it toward the ≥97%
-# target in docs/TESTING.md.
-fail_under = 94
+# ratchet: it only moves up. The ≥97% target in docs/TESTING.md is met; what is left
+# uncovered is defensive code no caller can reach (a store answering inconsistently,
+# a version fallback for a source tree that was never installed).
+fail_under = 98
 show_missing = true

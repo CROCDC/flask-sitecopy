@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from sitecopy import Group, Registry, Section, TextField
-from sitecopy.testing import check_registry, check_templates
+from sitecopy.testing import check_registry, check_templates, referenced_keys
 
 
 def field(key: str, **kwargs) -> TextField:
@@ -17,7 +17,7 @@ def field(key: str, **kwargs) -> TextField:
 def registry_of(*fields: TextField, **kwargs) -> Registry:
     group = Group(
         key=kwargs.pop("group_key", "g"),
-        title="Grupo",
+        title=kwargs.pop("group_title", "Grupo"),
         description="Un grupo.",
         sections=(Section("s", "Sección", fields=fields),),
     )
@@ -185,3 +185,76 @@ def test_a_runtime_built_key_can_be_allow_listed(tmp_path) -> None:
 def test_the_scan_reads_python_too(tmp_path) -> None:
     (tmp_path / "routes.py").write_text('title = t("a.one")\n', encoding="utf-8")
     assert check_templates(registry_of(field("a.one")), tmp_path) == []
+
+
+# --- the checks nobody had reached yet -------------------------------------------
+
+
+def test_a_group_with_no_fields_is_reported() -> None:
+    """An admin screen with nothing on it: the section exists in the nav and opens empty."""
+    empty = Group("g", "Grupo", "Sin nada", sections=())
+    assert any("no fields" in p for p in check_registry(Registry(groups=(empty,))))
+
+
+def test_a_group_with_no_title_is_reported() -> None:
+    """The title is the nav entry and the screen heading; blank, the row is unclickable."""
+    problems = check_registry(registry_of(field("a.b"), group_title=""))
+    assert any("no title" in p for p in problems)
+
+
+def test_a_section_declared_twice_in_one_group_is_reported() -> None:
+    group = Group(
+        "g",
+        "Grupo",
+        "Dos cards con la misma clave",
+        sections=(
+            Section("s", "Primera", fields=(field("a.b"),)),
+            Section("s", "Segunda", fields=(field("c.d"),)),
+        ),
+    )
+    problems = check_registry(Registry(groups=(group,)))
+    assert any("declares section" in p for p in problems)
+
+
+def test_a_field_with_no_label_is_reported() -> None:
+    """The label is the only name the editor ever sees for a string."""
+    problems = check_registry(registry_of(TextField("a.b", "  ", "Texto")))
+    assert any("no label" in p for p in problems)
+
+
+@pytest.mark.parametrize("kind", ["line", "url", "image", "video"])
+def test_a_newline_in_a_single_line_default_is_reported(kind) -> None:
+    """`_normalize` collapses it on the first save, so the site would silently change
+    the first time someone opens the screen and presses Guardar."""
+    default = "https://acme.test/\nx" if kind == "url" else "Hola\nchau"
+    problems = check_registry(registry_of(field("a.b", type=kind, default=default)))
+    assert any("cannot contain a newline" in p for p in problems)
+
+
+def test_field_tokens_for_a_field_that_does_not_exist_is_reported() -> None:
+    """A per-call token declared for a key nobody has: the admin would accept a `{title}`
+    that no render ever fills."""
+    problems = check_registry(
+        registry_of(field("a.b"), field_tokens={"no.existe": ("title",)})
+    )
+    assert any("unknown field" in p for p in problems)
+
+
+def test_a_registry_mutated_after_construction_is_still_checked() -> None:
+    """`Registry.__post_init__` refuses a duplicate group and a token pointing nowhere,
+    so these only fire for a catalogue assembled dynamically and edited afterwards —
+    which is exactly when a host would want the check rather than a crash at import."""
+    registry = registry_of(field("a.b"))
+    registry.groups = registry.groups + registry.groups
+    registry.tokens = {**registry.tokens, "marca": "no.existe"}
+    problems = check_registry(registry)
+    assert any("declared twice" in p for p in problems)
+    assert any("points at an unknown field" in p for p in problems)
+
+
+def test_a_file_the_scan_cannot_read_is_skipped(tmp_path) -> None:
+    """A binary blob or an unreadable file in the templates tree is not a reason to fail
+    a registry check."""
+    (tmp_path / "logo.html").write_bytes(b"\xff\xfe\x00binario")
+    (tmp_path / "ok.html").write_text("{{ t('a.b') }}", encoding="utf-8")
+    assert referenced_keys(tmp_path) == {"a.b": [str(tmp_path / "ok.html")]}

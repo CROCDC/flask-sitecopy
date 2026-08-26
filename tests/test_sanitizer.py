@@ -9,7 +9,13 @@ from __future__ import annotations
 
 import pytest
 
-from sitecopy.sanitizer import safe_href, sanitize, strip_tags, visible_text
+from sitecopy.sanitizer import (
+    _looks_like_prose,
+    safe_href,
+    sanitize,
+    strip_tags,
+    visible_text,
+)
 
 
 # --- what must survive ---------------------------------------------------------
@@ -250,3 +256,34 @@ def test_visible_text_returns_the_text_that_would_show() -> None:
     assert visible_text("Hola <b>mundo</b>") == "Hola mundo"
     assert visible_text("<p>x</p><p>y</p>") == "x y"
     assert visible_text("") == ""
+
+
+# --- everything that is not markup and not copy ---------------------------------
+
+
+def test_a_doctype_is_dropped() -> None:
+    assert sanitize("<!DOCTYPE html><p>Hola</p>") == "<p>Hola</p>"
+
+
+def test_a_processing_instruction_is_dropped() -> None:
+    """A value pasted out of a PHP or XML template must not ship its `<? … ?>`."""
+    assert sanitize("<?php echo 1; ?><p>Hola</p>") == "<p>Hola</p>"
+
+
+def test_a_cdata_section_is_dropped() -> None:
+    assert "Hola" in sanitize("<![CDATA[algo]]><p>Hola</p>")
+    assert "CDATA" not in sanitize("<![CDATA[algo]]><p>Hola</p>")
+
+
+def test_a_bare_angle_pair_comes_back_as_text() -> None:
+    """It is not a tag to any parser, so it is copy — and copy is escaped."""
+    assert sanitize("Hola <> chau") == "Hola &lt;&gt; chau"
+
+
+def test_nothing_between_the_brackets_is_neither_prose_nor_markup() -> None:
+    """`_looks_like_prose` is what keeps "<de lunes a viernes de 9 a 18 hs>" from being
+    deleted as an unknown tag. With no text to judge, the answer is "not prose"."""
+    assert _looks_like_prose(None) is False
+    assert _looks_like_prose("") is False
+    assert _looks_like_prose("<de lunes a viernes>") is True
+    assert _looks_like_prose('<a href="x">') is False

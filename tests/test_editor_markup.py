@@ -8,7 +8,7 @@ import re
 import pytest
 
 from sitecopy import resolver
-from sitecopy.editor_markup import transform
+from sitecopy.editor_markup import _asset, build_manifest, transform
 from sitecopy.resolver import EDIT_END, EDIT_SEP, EDIT_START
 from sitecopy.state import current_store
 
@@ -260,3 +260,55 @@ def test_a_param_passed_through_t_carries_no_markers(app, client) -> None:
     with app.test_request_context("/?edit=1"):
         value = resolver.t("home.meta.title", section=resolver.editable("home.hero.alt"))
     assert not any(marker in str(value) for marker in MARKERS)
+
+
+# --- malformed markup the scanner still has to survive ---------------------------
+
+
+def test_a_self_closing_tag_keeps_its_slash_when_a_key_is_recorded_on_it(app, client) -> None:
+    """`<img … />` in an XHTML-style template: appending the attribute after the slash
+    would have produced `<img alt="x" data-ct-keys="…"/>` with the slash in the middle."""
+    login(client)
+    with app.test_request_context("/?edit=1"):
+        from flask import session
+
+        from sitecopy.auth import SESSION_KEY
+
+        session[SESSION_KEY] = True
+        html, _inline, hidden = transform(
+            f'<img alt="{EDIT_START}home.hero.alt{EDIT_SEP}Una foto{EDIT_END}"/>'
+        )
+    assert 'data-ct-keys="home.hero.alt"/>' in html
+    assert hidden == ["home.hero.alt"]
+
+
+def test_a_tag_that_never_closes_is_emitted_rather_than_swallowed(app) -> None:
+    """Truncated HTML (a template cut short, a proxy that clipped the body) must not
+    cost the page whatever was buffered when the scanner ran out of input."""
+    with app.test_request_context("/?edit=1"):
+        html, _inline, _hidden = transform("<p>Hola</p><div class=")
+    assert html.endswith("<div class=")
+
+
+def test_a_key_a_template_still_asks_for_but_the_registry_dropped_is_left_out(app) -> None:
+    """`t_plain` records the key BEFORE looking it up, so a template that outlived a
+    removed key would otherwise put an entry with no field into the editor's manifest."""
+    app.config["TESTING"] = False
+    with app.test_request_context("/?edit=1"):
+        from flask import session
+
+        from sitecopy.auth import SESSION_KEY
+
+        session[SESSION_KEY] = True
+        resolver.t_plain("se.fue")
+        manifest = build_manifest("/", [], [])
+    assert "se.fue" not in manifest["fields"]
+
+
+def test_an_asset_that_is_not_on_disk_is_still_linked(app) -> None:
+    """The cache-buster is read from the file's mtime. A missing file means no buster,
+    not a 500 on every edit-mode page."""
+    with app.test_request_context("/"):
+        url = _asset(app, "css/no-existe.css")
+    assert url.endswith("css/no-existe.css")
+    assert "?v=" not in url
