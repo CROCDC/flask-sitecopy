@@ -42,6 +42,8 @@ from sitecopy.editor_markup import field_payload
 from sitecopy.registry import Group, TextField
 from sitecopy.media import sniff
 from sitecopy.sanitizer import safe_href, safe_media_src, sanitize, strip_tags, visible_text
+from sitecopy.sizes import BASE as BASE_SIZE
+from sitecopy.sizes import STEPS, SizeStep, is_size_key, key_for, size_key, steps_for
 from sitecopy.state import (
     SiteCopyState,
     current_file_store,
@@ -236,6 +238,79 @@ def _validate(field: TextField, value: str) -> str | None:
     return None
 
 
+# --- text sizes ----------------------------------------------------------------
+#
+# A size is stored as a sibling override row, so everything below is about routing it
+# to the right field and refusing anything that is not a token of the active scale.
+
+
+def _size_owner(row_key: str) -> TextField | None:
+    """The field a `size:…` key belongs to, if it is one and the field still exists."""
+    owner = key_for(row_key)
+    return current_registry().field_for(owner) if owner else None
+
+
+def _normalize_size(raw: str) -> str:
+    return str(raw or "").strip().lower()
+
+
+def _validate_size(field: TextField, token: str) -> str | None:
+    """Return an error for `token` as a size for `field`, or None.
+
+    Nothing here is cosmetic: the token becomes a CSS class on a public page, so the
+    closed scale is the guard. The render path re-checks it anyway, but a value it would
+    silently ignore has no business being stored — the editor would show a size the site
+    does not render.
+    """
+    scale = current_state().text_sizes
+    if not scale:
+        return "Este sitio no permite cambiar el tamaño de los textos."
+    if not field.is_resizable:
+        return f"{_name(field)}: este texto no cambia de tamaño."
+    if token not in scale:
+        known = ", ".join(f"«{STEPS[t].label}»" for t in scale)
+        return f"{_name(field)}: ese tamaño no existe. Los que podés elegir son: {known}."
+    return None
+
+
+def _stage_size(field: TextField, token: str) -> None:
+    """Draft `token` as `field`'s size, or clear the draft when it is already live.
+
+    Same rule as the copy: a value equal to what the site already shows is not a
+    pending change, so it must not sit in the "sin publicar" counter forever.
+    """
+    state = resolver.size_state(field.key)
+    current_store().set_draft(state["row"], None if token == state["live"] else token)
+
+
+def _with_size_rows(keys: Iterable[str]) -> list[str]:
+    """Each key plus its size row.
+
+    Publishing a title publishes the size that title was given: they are one change to
+    whoever made them, and the confirm names the text once.
+    """
+    out: list[str] = []
+    for key in keys:
+        out.append(key)
+        out.append(size_key(key))
+    return out
+
+
+def _size_steps() -> list[SizeStep]:
+    """The sizes this install offers, for the no-JS screens. Empty = no control drawn."""
+    return steps_for(current_state().text_sizes)
+
+
+def _publish_defaults() -> dict[str, str]:
+    """The defaults `TextStore.publish` collapses a draft against.
+
+    Publish turns a draft equal to the default back into "no override" — which is what
+    makes "volver a Normal" delete the size row instead of storing the word "base" in
+    it. The registry has a default for the copy; sizes bring their own.
+    """
+    return {**current_registry().defaults, **resolver.size_defaults()}
+
+
 def _apply_submission(group: Group, form: Any) -> tuple[list[str], list[str], int]:
     """Stage the posted values as drafts. Returns (errors, rejected keys, fields staged).
 
@@ -276,6 +351,20 @@ def _apply_submission(group: Group, form: Any) -> tuple[list[str], list[str], in
         store.set_draft(field.key, None if value == state["live"] else value)
         staged += 1
 
+    # Sizes ride the same submission. Separate loop because a screen may post a size for
+    # a field whose text it did not change (and `restore` posts no text at all).
+    for field in group.fields:
+        name = size_key(field.key)
+        if name not in form:
+            continue
+        token = _normalize_size(form.get(name, ""))
+        error = _validate_size(field, token)
+        if error:
+            _add_error(errors, error_keys, error, field.key)
+            continue
+        _stage_size(field, token)
+        staged += 1
+
     return errors, error_keys, staged
 
 
@@ -294,6 +383,12 @@ def _editor_values(group: Group, form: Any | None = None) -> dict[str, Any]:
         if field.type == "rich":
             haystack = strip_tags(haystack)
         state = dict(state, search_text=f"{field.label} {field.key} {haystack}".lower())
+        # What the size dropdown should show, with a rejected submission winning over
+        # what is stored — same rule the text box above follows.
+        size = resolver.size_state(field.key)["value"]
+        if form is not None and size_key(field.key) in form:
+            size = _normalize_size(form.get(size_key(field.key), ""))
+        state = dict(state, size=size, size_name=size_key(field.key))
         states[field.key] = state
     return states
 
@@ -362,7 +457,14 @@ def pending_payload() -> dict[str, Any]:
     was invalid it blocked every save with nothing to click.
     """
     registry = current_registry()
-    keys = [key for key in current_store().draft_keys() if key in registry.fields]
+    keys: list[str] = []
+    for key in current_store().draft_keys():
+        # A pending size is a pending change TO ITS FIELD, listed on that field's line.
+        # Left as a key of its own it would be counted and never shown — the panel only
+        # knows how to render registry fields — so the count and the list would disagree.
+        owner = key_for(key) or key
+        if owner in registry.fields and owner not in keys:
+            keys.append(owner)
     return {"pendingKeys": keys, "pendingFields": {key: field_payload(key) for key in keys}}
 
 
@@ -379,13 +481,21 @@ def _invalid_drafts(keys: list[str]) -> dict[str, str]:
     wanted = set(keys)
     problems: dict[str, str] = {}
     for key in store.draft_keys():
-        field = registry.field_for(key)
-        if key not in wanted or field is None:
+        if key not in wanted:
             continue
         row = store.get(key)
         if row is None or row.draft_value is None:
             continue
-        error = _validate(field, row.draft_value)
+        # A pending size gets the same treatment: it may predate the host narrowing the
+        # scale, and publishing it would put a class on the page that nothing renders.
+        owner = _size_owner(key)
+        if owner is not None:
+            error = _validate_size(owner, row.draft_value)
+        else:
+            field = registry.field_for(key)
+            if field is None:
+                continue
+            error = _validate(field, row.draft_value)
         if error:
             problems[key] = error
     return problems
@@ -526,8 +636,9 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
 
         # Refused, not truncated. A slice answered `ok: true` for a request whose tail
         # it threw away — and then published the STALE draft of every key it dropped.
-        # No honest request can carry more texts than the registry has.
-        if len(data["changes"]) > len(registry.fields):
+        # No honest request can carry more entries than the registry has fields, each
+        # able to contribute its text and its size.
+        if len(data["changes"]) > 2 * len(registry.fields):
             return {
                 "ok": False,
                 "errors": [
@@ -539,6 +650,31 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
         error_keys: list[str] = []
         staged = 0
         for raw_key, raw_value in data["changes"].items():
+            if is_size_key(str(raw_key)):
+                # A size, not a text. Same all-or-nothing handling: a bad one rejects
+                # the whole request rather than half-writing it.
+                owner = _size_owner(str(raw_key))
+                if owner is None:
+                    _add_error(
+                        errors,
+                        error_keys,
+                        f"Uno de los textos ya no existe ({raw_key}). Recargá el editor.",
+                        str(raw_key),
+                    )
+                    continue
+                if not isinstance(raw_value, str):
+                    _add_error(
+                        errors, error_keys, f"{_name(owner)}: no pudimos leer ese tamaño.", raw_key
+                    )
+                    continue
+                token = _normalize_size(raw_value)
+                error = _validate_size(owner, token)
+                if error:
+                    _add_error(errors, error_keys, error, str(raw_key))
+                    continue
+                _stage_size(owner, token)
+                staged += 1
+                continue
             field = registry.field_for(str(raw_key))
             if field is None:
                 _add_error(
@@ -584,8 +720,18 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
             # Absent or malformed means "nothing", never "everything": the whole point
             # is that a colleague's parked draft does not ride along. De-duplicated
             # because the list goes straight into an SQL IN (…), which 500s past ~32k.
+            # A size rides with the text it belongs to: the editor sends the field key
+            # and both go live together, so the confirm can name one text and mean it.
             scope = (
-                sorted({str(key) for key in requested if str(key) in registry.fields})
+                _with_size_rows(
+                    sorted(
+                        {
+                            key_for(str(key)) or str(key)
+                            for key in requested
+                            if (key_for(str(key)) or str(key)) in registry.fields
+                        }
+                    )
+                )
                 if isinstance(requested, list)
                 else []
             )
@@ -599,7 +745,7 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
                     "errors": list(problems.values())[:MAX_ERRORS],
                     "errorKeys": list(problems)[:MAX_ERRORS],
                 }, 400
-            published = store.publish(scope, registry.defaults)
+            published = store.publish(scope, _publish_defaults())
         resolver.save()
         if data.get("action") == "publish":
             _record_media_versions(scope)
@@ -654,27 +800,50 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
             store.set_draft(key, target)
             values[key] = target
 
-        if not values:
+        # A size published alongside the wording steps back with it: restoring the text
+        # and leaving it at the size the replaced version was given is half an undo.
+        sizes: dict[str, str] = {}
+        for key in dict.fromkeys(keys):
+            size = resolver.size_state(key)
+            if size["has_previous"]:
+                target = size["previous"]
+            elif size["previous"] is None and size["is_overridden"]:
+                # Same NULL ambiguity as the copy: never published, or what it replaced
+                # was "no size". Either way the step back is the site's own size.
+                target = BASE_SIZE
+            else:
+                continue
+            if target == size["live"]:
+                continue
+            store.set_draft(size["row"], target)
+            sizes[key] = target
+
+        if not values and not sizes:
+            # Nothing staged, but the loops above may have written to the session on the
+            # way to finding that out.
+            resolver.rollback()
             return {"ok": False, "errors": ["No hay una versión anterior de este texto."]}, 400
         resolver.save()
-        return {"ok": True, "values": values, **pending_payload()}
+        return {"ok": True, "values": values, "sizes": sizes, **pending_payload()}
 
     @bp.route("/publish", methods=["POST"])
     @login_required
     def publish_all() -> Response:
         registry = current_registry()
-        problems = _invalid_drafts(list(registry.fields))
+        everything = _with_size_rows(registry.fields)
+        problems = _invalid_drafts(everything)
         if problems:
             for message in problems.values():
                 flash(message, "error")
             flash("No publicamos nada: hay borradores con errores.", "error")
             return redirect(url_for(f"{state.blueprint_name}.index"))
         store = current_store()
-        changed = store.publish(list(registry.fields), registry.defaults)
+        changed = store.publish(everything, _publish_defaults())
         # Drafts orphaned by a renamed/removed key can never be published (nothing
         # renders them), so publishing the whole site drops them rather than leaving the
         # count stuck above zero forever. After publish, every remaining draft is one.
-        orphans = [k for k in store.draft_keys() if k not in registry.fields]
+        # A size row is not an orphan — it is read through the field it belongs to.
+        orphans = [k for k in store.draft_keys() if (key_for(k) or k) not in registry.fields]
         if orphans:
             store.discard_drafts(orphans)
         resolver.save()
@@ -696,7 +865,15 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
         data = request.get_json(silent=True)
         scoped = isinstance(data, dict) and isinstance(data.get("keys"), list)
         keys = (
-            sorted({str(key) for key in data["keys"] if str(key) in registry.fields})
+            _with_size_rows(
+                sorted(
+                    {
+                        key_for(str(key)) or str(key)
+                        for key in data["keys"]
+                        if (key_for(str(key)) or str(key)) in registry.fields
+                    }
+                )
+            )
             if scoped
             # Unscoped means "everything pending" — including a draft orphaned by a
             # renamed key, which registry.fields would never reach.
@@ -787,6 +964,7 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
             baseline_prefix=BASELINE_PREFIX,
             invalid_keys=[],
             field_errors={},
+            size_steps=_size_steps(),
         )
 
     @bp.route("/<group_key>", methods=["POST"])
@@ -797,7 +975,7 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
         store = current_store()
 
         if action == "discard":
-            dropped = store.discard_drafts([f.key for f in group.fields])
+            dropped = store.discard_drafts(_with_size_rows(f.key for f in group.fields))
             resolver.save()
             _flash_count(dropped, "Se descartó {n} cambio.", "Se descartaron {n} cambios.")
             return redirect(url_for(f"{state.blueprint_name}.group_edit", group_key=group.key))
@@ -817,6 +995,7 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
                     preview_path=group.resolve_preview_path(),
                     pending=resolver.pending_draft_count(group),
                     baseline_prefix=BASELINE_PREFIX,
+                    size_steps=_size_steps(),
                     invalid_keys=error_keys,
                     # Positionally aligned by `_add_error`; a field fails at most once
                     # per submission, so the keys are unique.
@@ -826,7 +1005,7 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
             )
 
         if action == "publish":
-            keys = [f.key for f in group.fields]
+            keys = _with_size_rows(f.key for f in group.fields)
             problems = _invalid_drafts(keys)
             if problems:
                 # Keep what was just typed (it validated); only the publish is refused.
@@ -837,7 +1016,7 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
                 return redirect(
                     url_for(f"{state.blueprint_name}.group_edit", group_key=group.key)
                 )
-            store.publish(keys, current_registry().defaults)
+            store.publish(keys, _publish_defaults())
             resolver.save()
             _record_media_versions(keys)
             flash("Cambios publicados. Ya se ven en la web.", "success")

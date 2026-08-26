@@ -149,6 +149,21 @@
 .ed-field textarea[readonly], .ed-field input[readonly] {
     cursor: pointer; background: var(--adm-card); border-style: dashed;
 }
+/* How big the text renders. A row, not a block: it is a small choice next to the text
+   it belongs to, and stacking it would push the field's own controls off the fold. */
+.ed-field-size { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.4rem; }
+.ed-field-size-label { font-size: 0.74rem; color: var(--adm-soft); }
+.ed-size-select {
+    font-family: inherit; font-size: 0.82rem; color: var(--adm-ink);
+    background: var(--adm-paper); border: 1px solid var(--adm-input-line);
+    /* 44px tall, like every other touch target in the panel. */
+    border-radius: 8px; padding: 0.45rem 0.5rem; min-height: 44px;
+}
+.ed-size-select:focus { outline: 2px solid var(--adm-accent); outline-offset: 1px; }
+.ed-size-select:disabled { cursor: not-allowed; opacity: 0.6; }
+/* Why the control is dead. Takes the whole row so it reads as a sentence, not a label. */
+.ed-field-size-why { flex-basis: 100%; font-size: 0.74rem; color: var(--adm-soft); margin: 0; }
+
 /* Preview of a media field's URL (image or video). Bounded and on a checkerboard so a
    transparent PNG still reads against the panel. */
 .ed-media-preview {

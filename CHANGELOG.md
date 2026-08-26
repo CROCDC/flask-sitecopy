@@ -4,6 +4,72 @@ All notable changes to **flask-sitecopy** are documented here. The format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Editable text sizes.** With `text_sizes=True`, every text field grows a **Tamaño**
+  control — in the visual editor's panel and in the section forms — that changes how big
+  that string renders, with no deploy and no CSS from the host.
+
+  ```python
+  SiteCopy(app, registry=REGISTRY, db=db, text_sizes=True)
+  ```
+
+  A size is a token from a closed scale (`xs sm base lg xl 2xl`), never a number, and the
+  scale is expressed in `em` — a multiple of whatever size the element already had — so
+  the site's own responsive type scale keeps deciding the absolute size. `base` is the
+  absence of a size: choosing *Normal* deletes the override.
+
+  It rides the copy's own lifecycle. A size is stored as a sibling override row
+  (`size:<key>`) in the same table, so it drafts, previews, publishes, discards and
+  undoes together with the text it belongs to, the editor counts the pair as one change,
+  and no migration or `TextStore` change is needed — a custom store keeps working
+  untouched.
+
+  Narrow the scale with `text_sizes=("sm", "base", "lg")`, keep one field out of it with
+  `TextField(..., resizable=False)`. `url`/`image`/`video` fields are never resizable.
+
+- **`testing.check_response_pipeline`.** A third check for the host's own CI, beside
+  `check_registry` and `check_templates`. Sizes are rendered by rewriting the finished
+  response, so a compression extension wired after `SiteCopy(...)` now ships the editor's
+  internal markers to every visitor rather than only to an admin in `?edit=1`. This
+  stages a real size, fetches the page as a visitor, and names what got to the response
+  first.
+
+### Fixed
+
+- **The section forms could not be submitted from a browser** whenever the section held an
+  `image` or `video` field on a site path. Those rendered as `<input type="url">`, and the
+  browser's own constraint validation rejects `/static/hero.jpg` — the value this library
+  documents and accepts — so it refused to send the form at all, with JavaScript or
+  without. A picture on a site path made the whole screen unsaveable, and the only clue
+  was a tooltip on an input nobody was editing. Media fields are now `type="text"` with
+  `inputmode="url"`, which keeps the URL keyboard on a phone; `url` fields stay
+  `type="url"`, since those really must be absolute links.
+
+  It went unnoticed because every test posted to the endpoint directly. The browser suite
+  now checks that the form is one the browser is willing to send, and drives a save with
+  the editor's script blocked.
+
+### Changed
+
+- A sized value is wrapped at render time in `<span class="sc-s sc-s-lg">` (a `<div>` for
+  a `rich` value), with the rules injected as a `<style>` in the `<head>` — **only** on
+  pages that actually carry a size. A page with none is byte-for-byte the page it was.
+  Note that the wrapper is a new element: a selector like `h1 > strong` can stop matching.
+- `pending_draft_count()` counts FIELDS with something pending rather than rows, so a
+  text and its size are one pending change and the count always matches the list.
+
+### Notes for upgraders
+
+- Fully backwards-compatible: sizes are off unless `text_sizes=` is passed, and with them
+  off nothing about the render path changes. New public API: `text_sizes`,
+  `text_sizes_css`, `TextField.resizable`, `size_for`, `size_class`,
+  `testing.check_response_pipeline`, and the `sitecopy.sizes` module.
+- The `size:` key prefix is now reserved. `check_registry` reports a registry key that
+  claims it.
+
 ## [0.4.0] — 2026-08-12
 
 ### Added

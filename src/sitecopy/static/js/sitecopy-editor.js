@@ -36,8 +36,16 @@
   const CSRF = root.dataset.csrf || "";
   const jsonHeaders = { "Content-Type": "application/json", "X-Sitecopy-CSRF": CSRF };
 
-  // key -> the value the user has typed but not saved yet.
+  // key -> the value the user has typed but not saved yet. A text size lives in here
+  // too, under the same sibling key the store uses (`size:<key>`), so it rides every
+  // path a text already takes: staged, counted, saved, published, discarded.
   const pending = Object.create(null);
+  const SIZE_PREFIX = "size:";
+
+  /** The field a pending key belongs to — itself, or the field whose size it is. */
+  function ownerOf(key) {
+    return key.indexOf(SIZE_PREFIX) === 0 ? key.slice(SIZE_PREFIX.length) : key;
+  }
   let manifest = { fields: {}, inlineKeys: [], hiddenKeys: [] };
   // key -> the field's own render(), so a change made anywhere (canvas, undo)
   // refreshes its counter. It used to only run on the textarea's own `input`.
@@ -51,6 +59,8 @@
   // Metadata for pending keys the current page does not render, so the panel can
   // still show (and fix) them.
   let extraFields = {};
+  // Keys this page renders only inside an attribute or a <title> — see renderFields.
+  let invisibleKeys = new Set();
   (function seedPending() {
     const node = root.querySelector("[data-ed-pending-state]");
     if (!node) return;
@@ -81,15 +91,23 @@
     syncBarHeight();
   }
 
+  /** Fields with something unsaved. A text and its size are ONE change to the person
+   *  who made them — counting them as two is how "te quedaron 2 cambios" ends up over
+   *  a list with one row in it. The server folds them the same way. */
   function dirtyCount() {
-    return Object.keys(pending).length;
+    const owners = new Set();
+    Object.keys(pending).forEach((key) => owners.add(ownerOf(key)));
+    return owners.size;
   }
 
   /** Everything that would go live on Publicar: what is typed here plus what is
    *  already drafted on the server. A union, because the same key can be in both —
    *  adding the two counts instead counted one pending text as two. */
   function pendingKeys() {
-    const keys = new Set(Object.keys(pending));
+    const keys = new Set();
+    // Field keys only: the server publishes a text together with its size, so sending
+    // the size key as well would just name the same change twice in the confirm.
+    Object.keys(pending).forEach((key) => keys.add(ownerOf(key)));
     serverDrafts.forEach((key) => keys.add(key));
     return Array.from(keys);
   }
@@ -350,6 +368,12 @@
     return key in pending ? pending[key] : (fieldFor(key) || {}).raw || "";
   }
 
+  /** The size the panel should show as chosen: what was picked here, else what loaded. */
+  function sizeOf(key) {
+    const staged = pending[SIZE_PREFIX + key];
+    return staged != null ? staged : (fieldFor(key) || {}).size || "base";
+  }
+
   /* ---------------- media (image/video) controls ---------------- */
 
   /** Preview + upload + version gallery for a media field. Returns the preview element,
@@ -514,6 +538,52 @@
       });
   }
 
+  /** The size picker for one field, appended to `wrap`. Returns the <select>, or null
+   *  where this install (or this field) has no size to offer. */
+  function buildSizeControl(wrap, field, key) {
+    const steps = manifest.sizes || [];
+    if (!steps.length || !field.resizable) return null;
+
+    const box = document.createElement("div");
+    box.className = "ed-field-size";
+
+    const label = document.createElement("label");
+    label.className = "ed-field-size-label";
+    label.htmlFor = "ed-size-" + key;
+    label.textContent = "Tamaño";
+    box.appendChild(label);
+
+    const select = document.createElement("select");
+    select.id = "ed-size-" + key;
+    select.className = "ed-size-select";
+    steps.forEach((step) => {
+      const option = document.createElement("option");
+      option.value = step.token;
+      option.textContent = step.label;
+      select.appendChild(option);
+    });
+    select.value = sizeOf(key);
+    select.addEventListener("change", () => stageSize(key, select.value));
+    box.appendChild(select);
+
+    // Saying "no" and saying why, rather than offering a control that would be accepted,
+    // stored, and then quietly ignored by every render.
+    if (invisibleKeys.has(key)) {
+      select.disabled = true;
+      const why = document.createElement("p");
+      why.className = "ed-field-size-why";
+      why.id = "ed-size-why-" + key;
+      why.textContent =
+        "Este texto no se ve en la página (está en el título de la pestaña, en una " +
+        "descripción o en un dato para buscadores), así que no cambia de tamaño.";
+      select.setAttribute("aria-describedby", why.id);
+      box.appendChild(why);
+    }
+
+    wrap.appendChild(box);
+    return select;
+  }
+
   function buildField(key) {
     const field = fieldFor(key);
     const wrap = document.createElement("div");
@@ -536,8 +606,15 @@
     const multiline = field.type === "text" || field.type === "lines" || field.type === "rich";
     const input = document.createElement(multiline ? "textarea" : "input");
     input.id = "ed-" + key;
-    if (!multiline) input.type = field.type === "url" || isMedia ? "url" : "text";
-    else input.rows = field.type === "rich" ? 6 : 3;
+    // A media field is text, not type="url": its value may be a site path, which the
+    // browser marks invalid (and, in the form screens, refuses to submit). `inputmode`
+    // keeps the URL keyboard on a phone without the validation.
+    if (multiline) {
+      input.rows = field.type === "rich" ? 6 : 3;
+    } else {
+      input.type = field.type === "url" ? "url" : "text";
+      if (isMedia) input.inputMode = "url";
+    }
     input.value = valueOf(key);
     input.maxLength = field.max;
     wrap.appendChild(input);
@@ -548,6 +625,11 @@
     if (isMedia) {
       preview = buildMediaControls(wrap, field, key, input);
     }
+
+    // How big the text renders. Only where the host turned sizes on, and only on a
+    // field that can carry one — a picture's URL has no size, and a text that reaches
+    // the page inside an attribute has nowhere to put the wrapper that would apply it.
+    const sizeSelect = buildSizeControl(wrap, field, key);
 
     if (field.hint) {
       const hint = document.createElement("p");
@@ -620,11 +702,13 @@
         if (url && safeHref(url)) preview.src = url;
         else { preview.removeAttribute("src"); preview.hidden = true; }
       }
-      const dirty = key in pending;
+      if (sizeSelect && sizeSelect.value !== sizeOf(key)) sizeSelect.value = sizeOf(key);
+      // A pending size makes its field dirty: it is the same change to whoever made it.
+      const dirty = key in pending || SIZE_PREFIX + key in pending;
       wrap.classList.toggle("is-dirty", dirty);
       // The older form screen has flagged this since day one; with 91 fields in the
       // panel, "which ones did I leave saved?" was a memory game.
-      wrap.classList.toggle("is-draft", !dirty && hasDraft(key));
+      wrap.classList.toggle("is-draft", !dirty && (hasDraft(key) || Boolean(field.sizeHasDraft)));
       // Not `!dirty`: a draft that was already saved is not "dirty", and that was the
       // one state with no way back to the live wording at all.
       const live = field.live != null ? field.live : field.raw;
@@ -663,6 +747,9 @@
 
   function renderFields() {
     const hidden = new Set(manifest.hiddenKeys || []);
+    // buildField needs it too: a text that only reaches the page inside an attribute or
+    // the <title> has nowhere to put a wrapper, so it cannot be resized.
+    invisibleKeys = hidden;
     hiddenBadge.textContent = String(hidden.size);
 
     const box = root.querySelector("[data-ed-fields]");
@@ -675,7 +762,7 @@
     // saved has no server-side draft to be listed from — `seenFields` is what makes
     // it renderable once the manifest of the page it was typed on is gone.
     Object.keys(extraFields)
-      .concat(Object.keys(pending))
+      .concat(Object.keys(pending).map(ownerOf))
       .forEach((key) => {
         if (keys.indexOf(key) === -1) keys.push(key);
       });
@@ -803,6 +890,27 @@
     if (renderers[key]) renderers[key]();
   }
 
+  /** Pick a size for `key`. Staged like any other change, and shown on the canvas at
+   *  once so the choice is judged against the real page rather than a dropdown. */
+  function stageSize(key, token) {
+    const field = fieldFor(key) || {};
+    const row = SIZE_PREFIX + key;
+    // Same bookkeeping stageChange does: once the canvas moves to a page that does not
+    // render this key, `manifest.fields` no longer has it and the panel could not draw
+    // its row — while the size still counted towards Publicar. A number the list cannot
+    // account for is the bug this whole feature was careful about on the server side.
+    const known = manifest.fields[key] || extraFields[key];
+    if (known) seenFields[key] = known;
+    // Against what LOADED, like stageChange: putting the select back where it was is
+    // not a pending change, and must not sit in the counter forever.
+    if (token === (field.size || "base")) delete pending[row];
+    else pending[row] = token;
+    syncButtons();
+    setStatus(dirtyCount() ? "Cambios sin guardar" : draftNotice());
+    tellFrame({ type: "size", key: key, token: token });
+    if (renderers[key]) renderers[key]();
+  }
+
   function markInvalid(keys) {
     root.querySelectorAll(".ed-field.is-invalid").forEach((item) => {
       item.classList.remove("is-invalid");
@@ -812,6 +920,8 @@
         box.removeAttribute("aria-describedby");
       }
     });
+    // A rejected size names its own row key; the thing to point at is the field.
+    keys = Array.from(new Set(keys.map(ownerOf)));
     tellFrame({ type: "highlight", keys: keys });
     if (!keys.length) return;
     setPanel(true, false);

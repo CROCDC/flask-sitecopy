@@ -26,6 +26,9 @@ from markupsafe import Markup, escape
 
 from sitecopy.registry import Group, Registry
 from sitecopy.sanitizer import safe_href, safe_media_src, sanitize
+from sitecopy.sizes import BASE as BASE_SIZE
+from sitecopy.sizes import classes as size_classes
+from sitecopy.sizes import is_size_key, key_for, size_key
 from sitecopy.state import current_registry, current_state, current_store
 
 # `?preview=1` on any public URL renders pending drafts — for a logged-in admin only.
@@ -106,6 +109,9 @@ def invalidate() -> None:
         cache.pop("overrides", None)
         cache.pop("tokens", None)
         cache.pop("previous", None)
+        # Derived from the overrides above: a save that adds the first size on the site
+        # has to turn the response rewrite on for the very next render.
+        cache.pop("sizes_active", None)
 
 
 def save() -> None:
@@ -310,6 +316,119 @@ def _safe_media(value: str, key: str) -> str:
     return current_registry().defaults.get(key, "")
 
 
+# --- text size ----------------------------------------------------------------
+#
+# A size is stored as a sibling override row (`size:<key>`), so it resolves through
+# exactly the same precedence as the copy — including "drafts only in preview". See
+# sitecopy/sizes.py for why it is stored that way.
+
+
+def size_scale() -> tuple[str, ...]:
+    """The sizes this install offers, or `()` when the feature was never turned on."""
+    return current_state().text_sizes
+
+
+def size_for(key: str) -> str:
+    """The size token `key` renders at, or `""` for whatever size the site already uses.
+
+    The scale is re-checked HERE, not only where the value is saved. A token that
+    reached the table some other way — a restored backup, a manual UPDATE, a scale the
+    host narrowed after the fact — must not be able to put an arbitrary class on a
+    public page, and must degrade to "no size" rather than to a broken one. Same
+    reasoning as `_safe_url` and `_safe_media`.
+    """
+    scale = size_scale()
+    if not scale:
+        return ""
+    field = current_registry().fields.get(key)
+    if field is None or not field.is_resizable:
+        return ""
+    token = effective(size_key(key))
+    # BASE is the absence of a size, so it never renders a class even if a row holds it
+    # (an older draft, say, from before "Normal" learned to delete the row).
+    if token == BASE_SIZE or token not in scale:
+        return ""
+    return token
+
+
+def size_class(key: str, block: bool = False) -> str:
+    """`key`'s size as a class attribute, or `""`.
+
+    The escape hatch for a host that builds its own `t()` (`jinja_globals=False`) and so
+    never passes through the marker rewrite::
+
+        <h1 class="{{ size_class('home.hero.title') }}">{{ my_t('home.hero.title') }}</h1>
+    """
+    token = size_for(key)
+    return size_classes(token, block=block) if token else ""
+
+
+def size_state(key: str) -> dict[str, Any]:
+    """What `field_state` gives for the copy, for that field's SIZE row.
+
+    `live` is `BASE` rather than None when nothing is stored: "the site's own size" is a
+    real answer, and treating it as one is what lets the publish path collapse a
+    "volver a Normal" draft back into no row at all.
+    """
+    row = size_key(key)
+    published, draft = _overrides().get(row, (None, None))
+    live = published if published is not None else BASE_SIZE
+    previous = _previous_values().get(row)
+    return {
+        "row": row,
+        "value": draft if draft is not None else live,
+        "live": live,
+        "draft": draft,
+        "has_draft": draft is not None,
+        "is_overridden": published is not None,
+        "previous": previous,
+        "has_previous": previous is not None and previous != live,
+    }
+
+
+def size_defaults() -> dict[str, str]:
+    """`size:<key> -> BASE` for every resizable field, for `TextStore.publish`.
+
+    Publish collapses a draft equal to the default back into "no override", which is
+    what makes choosing "Normal" DELETE the row instead of storing the word "base" in
+    it. The registry has no default size to give, so it is supplied here.
+    """
+    if not size_scale():
+        return {}
+    return {
+        size_key(key): BASE_SIZE
+        for key, field in current_registry().fields.items()
+        if field.is_resizable
+    }
+
+
+def sizes_active() -> bool:
+    """True when anything this request could render carries a size.
+
+    This is what keeps the feature free for everyone else: the response rewrite reads
+    and re-scans the whole HTML body, and it must not do that on every public response
+    of every site. Answering from the overrides map — already loaded for this request —
+    costs one pass over the keys.
+    """
+    scale = size_scale()
+    if not scale:
+        return False
+    cache = _cache()
+    if "sizes_active" in cache:
+        return cache["sizes_active"]
+    preview = is_preview()
+    active = False
+    for key, (published, draft) in _overrides().items():
+        if not is_size_key(key):
+            continue
+        value = draft if (draft is not None and preview) else published
+        if value and value != BASE_SIZE and value in scale:
+            active = True
+            break
+    cache["sizes_active"] = active
+    return active
+
+
 def t_plain(key: str, **params: Any) -> str | Markup:
     """`t()` for values that are serialized rather than rendered (inline JSON).
 
@@ -417,10 +536,23 @@ def _wrap(key: str, value: str | Markup, line: int | None = None) -> Markup:
     return Markup(f"{EDIT_START}{label}{EDIT_SEP}") + value + Markup(EDIT_END)
 
 
+def _needs_marker(key: str) -> bool:
+    """Whether this render has to tag `key` with its key for the response hook.
+
+    Edit mode tags everything. A public render tags only what carries a SIZE: the hook
+    is what turns the tag into a wrapper (and what knows to drop it when the value
+    landed in an attribute or a `<title>`, where a wrapper cannot go). Anything else is
+    emitted exactly as it was before this feature existed.
+    """
+    if key not in current_registry().fields:
+        return False
+    return is_edit_mode() or bool(size_for(key))
+
+
 def editable(key: str, **params: Any) -> str | Markup:
     """`t()` for templates: identical output, plus the editor tag in edit mode."""
     value = t(key, **params)
-    if not is_edit_mode() or key not in current_registry().fields:
+    if not _needs_marker(key):
         return value
     return _wrap(key, value)
 
@@ -442,7 +574,7 @@ def editable_lines(key: str, **params: Any) -> list[str] | list[Markup]:
     filtered list therefore made a click land on a different phrase, and publishing it
     overwrote the wrong one while leaving the clicked one untouched.
     """
-    if not is_edit_mode() or key not in current_registry().fields:
+    if not _needs_marker(key):
         return t_lines(key, **params)
     wrapped: list[Markup] = []
     # `_raw_lines` numbers by the RAW value (split before interpolation), exactly as the
@@ -515,12 +647,18 @@ def pending_draft_count(group: Group | None = None) -> int:
     # removed key. Counting only registry.fields hid such a draft from the index, so it
     # was never shown, never publishable and never discardable: stuck forever. The
     # site-wide publish/discard now act on the same full set, so this stays honest.
+    #
+    # A pending SIZE counts as its field's pending change, not as one of its own: the
+    # panel lists it on that field's line, and a count the list cannot account for is
+    # the same "you have 3 changes" / two rows on screen bug in a new costume.
     if group is None:
-        return len(current_store().draft_keys())
+        return len({key_for(key) or key for key in current_store().draft_keys()})
     overrides = _overrides()
-    return sum(
-        1 for f in group.fields if overrides.get(f.key, (None, None))[1] is not None
-    )
+
+    def pending(key: str) -> bool:
+        return overrides.get(key, (None, None))[1] is not None
+
+    return sum(1 for f in group.fields if pending(f.key) or pending(size_key(f.key)))
 
 
 def override_count(group: Group) -> int:

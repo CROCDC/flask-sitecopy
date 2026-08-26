@@ -344,3 +344,33 @@ def test_ensure_schema_with_an_app_builds_the_media_table(tmp_path) -> None:
     with app.app_context():
         current_media_versions().record("a.pic", "/static/x.png")
         assert current_media_versions().versions("a.pic")
+
+
+# --- the parts of the contract a custom backend inherits -------------------------
+
+
+def test_a_custom_file_store_is_enabled_unless_it_says_otherwise() -> None:
+    """`enabled` answers "can this accept an upload right now?" — a store that always
+    can (S3, Cloudinary) should not have to implement it."""
+
+    class CloudStore(LocalFileStore.__bases__[0]):
+        def save(self, data, kind):  # pragma: no cover - never called here
+            return "/x"
+
+    assert CloudStore().enabled is True
+
+
+@pytest.mark.parametrize("store_kind", ["memory", "sqlalchemy"])
+def test_recording_an_empty_url_is_not_a_version(store_kind) -> None:
+    """A media field cleared back to nothing has no picture to roll back to, and an
+    empty entry in the gallery is a broken thumbnail with a date on it."""
+    if store_kind == "memory":
+        store = MemoryMediaVersionStore()
+        store.record("home.hero.image", "")
+        assert store.versions("home.hero.image") == []
+        return
+    app = build_app()
+    with app.app_context():
+        versions = app.extensions["sitecopy"].media_versions
+        versions.record("home.hero.image", "")
+        assert versions.versions("home.hero.image") == []

@@ -15,6 +15,7 @@ from flask import Flask
 from sitecopy import resolver
 from sitecopy.admin import build_blueprint
 from sitecopy.registry import Registry
+from sitecopy.sizes import normalize_scale
 from sitecopy.state import EXTENSION_KEY, SiteCopyState
 from sitecopy.storage import SQLAlchemyStore, TextStore
 
@@ -42,6 +43,9 @@ _OPTIONS = frozenset(
         "files",
         "media_store",
         "upload_max_bytes",
+        # Editable text sizes — off unless the host asks for them. See sitecopy/sizes.py.
+        "text_sizes",
+        "text_sizes_css",
     }
 )
 
@@ -79,6 +83,10 @@ class SiteCopy:
         `SITECOPY_PASSWORD` from the app config — set it, or the panel refuses every
         password.
 
+        `text_sizes` lets the editor change how big a text renders: `True` for the whole
+        scale, or a subset like `("sm", "base", "lg")`. Off by default — see
+        sitecopy/sizes.py for what a size is and why it is opt-in.
+
         `pages` returns the pages the visual editor can jump to,
         `[{"path": "/", "label": "Inicio"}, …]`; the default offers every argument-free
         GET route. `base_template` is the admin chrome the screens extend — pass yours
@@ -102,6 +110,13 @@ class SiteCopy:
                     "Flask-SQLAlchemy instance>, or store=<a TextStore>."
                 )
             store = SQLAlchemyStore(db, table_name=options.get("table_name") or "site_texts")
+
+        # Raises on an unknown token: a typo here should fail at boot rather than
+        # render a panel offering a size that resolves to nothing.
+        text_sizes = normalize_scale(options.get("text_sizes"))
+        text_sizes_css = str(options.get("text_sizes_css") or "inline")
+        if text_sizes_css not in ("inline", "link"):
+            raise ValueError('text_sizes_css must be "inline" or "link"')
 
         file_store, media_versions = _build_media(app, options, db)
         upload_max_bytes = {**DEFAULT_UPLOAD_MAX_BYTES, **(options.get("upload_max_bytes") or {})}
@@ -150,6 +165,8 @@ class SiteCopy:
             file_store=file_store,
             media_versions=media_versions,
             upload_max_bytes=upload_max_bytes,
+            text_sizes=text_sizes,
+            text_sizes_css=text_sizes_css,
         )
 
         app.extensions[EXTENSION_KEY] = state

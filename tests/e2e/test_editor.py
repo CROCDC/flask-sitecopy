@@ -289,3 +289,68 @@ def test_no_console_errors_during_a_session(editor):
     # The demo serves no favicon; that 404 is not the editor's doing and is filtered.
     real = [e for e in editor.console_errors if "favicon" not in e.lower()]
     assert real == [], real
+
+
+# --- text sizes ------------------------------------------------------------------
+
+
+def _size_select(editor, key: str):
+    return editor.page.locator(f'[data-ed-field="{key}"] select.ed-size-select')
+
+
+def test_choosing_a_size_shows_it_on_the_canvas_and_then_on_the_public_page(editor, base_url):
+    """The whole point of picking a size in the canvas is judging it against the real
+    page, so it has to change there before anything is saved."""
+    editor.page.locator("[data-ed-panel-toggle]").click()
+    editor.page.wait_for_timeout(300)
+
+    _size_select(editor, "home.hero.title").select_option("xl")
+    editor.page.wait_for_timeout(300)
+    assert "sc-s-xl" in (editor.ct("home.hero.title").get_attribute("class") or "")
+    assert editor.page.locator("[data-ed-pending]").inner_text() == "1"
+
+    editor.page.once("dialog", lambda d: d.accept())
+    editor.page.locator("[data-ed-publish]").click()
+    editor.page.wait_for_timeout(900)
+
+    pub = editor.page.context.new_page()
+    try:
+        pub.goto(f"{base_url}/", wait_until="networkidle")
+        assert pub.locator("span.sc-s-xl").first.is_visible()
+    finally:
+        pub.close()
+
+
+def test_going_back_to_normal_takes_the_size_off_the_page(editor):
+    editor.page.locator("[data-ed-panel-toggle]").click()
+    editor.page.wait_for_timeout(300)
+    select = _size_select(editor, "home.hero.title")
+    select.select_option("lg")
+    editor.page.wait_for_timeout(250)
+    select.select_option("base")
+    editor.page.wait_for_timeout(250)
+    assert "sc-s-" not in (editor.ct("home.hero.title").get_attribute("class") or "")
+    # Back where it started is not a pending change.
+    assert editor.page.locator("[data-ed-pending]").is_hidden()
+
+
+def test_a_text_and_its_size_are_one_pending_change(editor):
+    """Counted as two, the badge says 2 over a list with one row in it."""
+    editor.type_over("home.hero.title", "Bolsos de cactus")
+    editor.page.locator("[data-ed-panel-toggle]").click()
+    editor.page.wait_for_timeout(300)
+    _size_select(editor, "home.hero.title").select_option("lg")
+    editor.page.wait_for_timeout(300)
+    assert editor.page.locator("[data-ed-pending]").inner_text() == "1"
+
+
+def test_a_text_that_is_not_visible_on_the_page_says_why_it_has_no_size(editor):
+    """The <title> has nowhere to put a wrapper, so the control is dead — and says so
+    instead of accepting a choice every render would then ignore."""
+    editor.page.locator("[data-ed-panel-toggle]").click()
+    editor.page.wait_for_timeout(300)
+    select = _size_select(editor, "home.meta.title")
+    assert select.is_disabled()
+    assert "no se ve en la página" in editor.page.locator(
+        '[data-ed-field="home.meta.title"] .ed-field-size-why'
+    ).inner_text()

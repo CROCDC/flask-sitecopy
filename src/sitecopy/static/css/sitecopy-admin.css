@@ -131,6 +131,18 @@ video.ct-media-preview { max-width: 280px; }
 .ct-field.is-invalid .ct-input { border-color: var(--adm-err); }
 .ct-error { color: var(--adm-err); font-size: 0.82rem; font-weight: 500; margin: 0.3rem 0 0; }
 
+/* How big the text renders. A row of its own between the input and the counter, so it
+   reads as a property of the text rather than as another action. */
+.ct-size { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.45rem; }
+.ct-size-label { font-size: 0.78rem; color: var(--adm-soft); }
+.ct-size-select {
+    font-family: inherit; font-size: 0.85rem; color: var(--adm-ink);
+    background: var(--adm-paper); border: 1px solid var(--adm-input-line);
+    /* The same 44px touch target every control on this screen keeps. */
+    border-radius: 8px; padding: 0.45rem 0.5rem; min-height: 44px;
+}
+.ct-size-select:focus { outline: 2px solid var(--adm-accent); outline-offset: 1px; }
+
 .ct-field-foot {
     display: flex; align-items: center; justify-content: space-between;
     gap: 0.6rem; margin-top: 0.35rem; min-height: 1.4rem;
