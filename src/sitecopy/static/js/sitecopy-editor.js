@@ -609,11 +609,12 @@
     // A media field is text, not type="url": its value may be a site path, which the
     // browser marks invalid (and, in the form screens, refuses to submit). `inputmode`
     // keeps the URL keyboard on a phone without the validation.
-    if (!multiline) {
+    if (multiline) {
+      input.rows = field.type === "rich" ? 6 : 3;
+    } else {
       input.type = field.type === "url" ? "url" : "text";
       if (isMedia) input.inputMode = "url";
     }
-    else input.rows = field.type === "rich" ? 6 : 3;
     input.value = valueOf(key);
     input.maxLength = field.max;
     wrap.appendChild(input);
@@ -894,6 +895,12 @@
   function stageSize(key, token) {
     const field = fieldFor(key) || {};
     const row = SIZE_PREFIX + key;
+    // Same bookkeeping stageChange does: once the canvas moves to a page that does not
+    // render this key, `manifest.fields` no longer has it and the panel could not draw
+    // its row — while the size still counted towards Publicar. A number the list cannot
+    // account for is the bug this whole feature was careful about on the server side.
+    const known = manifest.fields[key] || extraFields[key];
+    if (known) seenFields[key] = known;
     // Against what LOADED, like stageChange: putting the select back where it was is
     // not a pending change, and must not sit in the counter forever.
     if (token === (field.size || "base")) delete pending[row];

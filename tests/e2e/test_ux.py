@@ -328,3 +328,22 @@ def test_operating_the_control_logs_no_console_errors(editor):
     editor.page.locator("[data-ed-save]").click()
     editor.page.wait_for_timeout(900)
     assert editor.console_errors == []
+
+
+def test_a_pending_size_survives_moving_the_canvas_to_another_page(editor):
+    """The badge counts it wherever you are, so the panel has to be able to show it
+    wherever you are too. Once the canvas leaves the page that declared the key, the
+    manifest no longer carries it — and a count with no row to click is the bug this
+    feature was careful about everywhere else."""
+    open_panel(editor)
+    size_select(editor).select_option("xl")
+    editor.page.wait_for_timeout(300)
+    assert editor.page.locator("[data-ed-pending]").inner_text() == "1"
+
+    editor.page.select_option("[data-ed-page]", "/nosotros")
+    editor.page.wait_for_timeout(1500)
+
+    assert editor.page.locator("[data-ed-pending]").inner_text() == "1"
+    row = editor.page.locator(f'[data-ed-field="{TITLE}"]')
+    assert row.count() == 1, "the pending size counts but has no row in the panel"
+    assert size_select(editor).input_value() == "xl"
