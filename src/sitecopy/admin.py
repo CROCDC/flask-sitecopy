@@ -43,7 +43,7 @@ from sitecopy.registry import Group, TextField
 from sitecopy.media import sniff
 from sitecopy.sanitizer import safe_href, safe_media_src, sanitize, strip_tags, visible_text
 from sitecopy.sizes import BASE as BASE_SIZE
-from sitecopy.sizes import STEPS, is_size_key, key_for, size_key, steps_for
+from sitecopy.sizes import STEPS, SizeStep, is_size_key, key_for, size_key, steps_for
 from sitecopy.state import (
     SiteCopyState,
     current_file_store,
@@ -296,7 +296,7 @@ def _with_size_rows(keys: Iterable[str]) -> list[str]:
     return out
 
 
-def _size_steps() -> list[Any]:
+def _size_steps() -> list[SizeStep]:
     """The sizes this install offers, for the no-JS screens. Empty = no control drawn."""
     return steps_for(current_state().text_sizes)
 

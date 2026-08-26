@@ -43,6 +43,7 @@ from sitecopy.resolver import (
     size_for,
     sizes_active,
 )
+from sitecopy.registry import TextField
 from sitecopy.sanitizer import sanitize
 from sitecopy.sizes import classes as size_classes
 from sitecopy.sizes import css_class as size_css_class
@@ -301,7 +302,7 @@ def field_payload(key: str) -> dict[str, Any]:
     }
 
 
-def _size_payload(key: str, field: Any) -> dict[str, Any]:
+def _size_payload(key: str, field: TextField) -> dict[str, Any]:
     """The field's size, for the panel — nothing at all where sizes are turned off.
 
     A site that never asked for the feature gets exactly the payload it got before it
@@ -309,8 +310,10 @@ def _size_payload(key: str, field: Any) -> dict[str, Any]:
     """
     from sitecopy.resolver import size_scale, size_state
 
-    if not size_scale() or not field.is_resizable:
-        return {"resizable": False} if size_scale() else {}
+    if not size_scale():
+        return {}
+    if not field.is_resizable:
+        return {"resizable": False}
     size = size_state(key)
     return {
         "resizable": True,
