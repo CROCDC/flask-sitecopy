@@ -23,6 +23,8 @@ from dataclasses import dataclass, field as dataclass_field
 from datetime import datetime
 from typing import Literal
 
+from sitecopy.sizes import RESIZABLE_TYPES
+
 FieldType = Literal["line", "text", "lines", "rich", "url", "image", "video"]
 
 # Field types whose value is a media URL/path: same validation and editor (upload +
@@ -76,6 +78,10 @@ class TextField:
     type: FieldType = "line"
     hint: str = ""
     max_length: int = 0
+    # Whether the editor may change how big this text renders. Only consulted when the
+    # host turned sizes on at all (`text_sizes=`); `False` keeps one field out of it —
+    # a legal disclaimer that has to stay the size the lawyer approved, say.
+    resizable: bool = True
 
     def __post_init__(self) -> None:
         if self.type not in DEFAULT_MAX_LENGTH:
@@ -89,6 +95,16 @@ class TextField:
     @property
     def is_multiline(self) -> bool:
         return self.type in ("text", "lines", "rich")
+
+    @property
+    def is_resizable(self) -> bool:
+        """True when a size could be offered for this field.
+
+        A `url`/`image`/`video` value is a location, not text, so there is nothing to
+        make bigger — the type wins over `resizable=True` rather than raising, since
+        the flag defaults to on and nobody sets it on a media field on purpose.
+        """
+        return self.resizable and self.type in RESIZABLE_TYPES
 
 
 @dataclass(frozen=True)

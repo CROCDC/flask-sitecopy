@@ -37,24 +37,39 @@ y por cada bug real dejar un test de regresión **antes** del fix.
   por-llamada, y bordes de `discard`/`delete`. Resultado: resolver **0 sobrevivientes**,
   storage 1 (equivalente: nombre de clase del modelo), sanitizer 4 (equivalentes: bordes
   de anidamiento malformado sin impacto). Cobertura 93.5% → **94.7%**.
+- ✅ **Fase 6 — usabilidad y cobertura.** `tests/e2e/test_ux.py`: 22 tests que miden lo
+  que una persona percibe, no el markup — operación solo con teclado, foco visible y no
+  perdido al re-renderizar, targets táctiles de 44px, cero scroll horizontal en 390px, la
+  barra que no se mueve bajo el cursor, el `font-size` computado que confirma que el paso
+  elegido es el que se ve, y el camino sin JavaScript con el script realmente bloqueado.
+  **Encontró un bug real y grave**: los campos `image`/`video` se renderizaban como
+  `<input type="url">`, y una ruta del sitio (`/static/hero.jpg` — el valor documentado)
+  falla la validación nativa del navegador, así que **la pantalla de sección entera no se
+  podía guardar desde un navegador**, con JS o sin JS. Ningún test lo veía porque todos
+  posteaban al endpoint directamente. Cobertura 94.7% → **99.1%**, umbral a 98.
 - 🎯 **Plan ejecutado.** Balance de bugs reales encontrados y corregidos: el CSRF (Fase 3),
-  el contraste WCAG (Fase 4), el código muerto (Fase 5) — más ~12 huecos de tests cerrados.
+  el contraste WCAG (Fase 4), el código muerto (Fase 5), el formulario que el navegador se
+  negaba a enviar (Fase 6) — más ~12 huecos de tests cerrados.
   Pendiente menor: los tests component-level de postMessage necesitan un runner JS
   (jest/vitest); hoy el chequeo de `event.source` está cubierto por revisión de código y el
   path de seguridad real (sanitizeRich) por la E2E.
 
-## Estado actual (línea de base)
+## Estado actual
 
-Medido con `pytest --cov`:
+Medido con `pytest --cov` y `pytest tests/e2e -m e2e`:
 
 | capa | estado | nota |
 |------|--------|------|
-| Python (unit + integración) | **94%**, 182 tests, 8 archivos | sólido |
-| JavaScript del editor (~2300 líneas) | **0% automatizado** | solo pruebas manuales con navegador |
-| E2E de navegador en el repo | **no hay** | el flujo real nunca se testea en CI |
-| CI (GitHub Actions) | **no hay** | los tests no corren solos en cada push |
-| Property-based / fuzzing | **no hay** | — |
-| `sanitizer.py` (seguridad) | 89% | crítico: merece corpus adversarial |
+| Python (unit + integración) | **99.1%** de ramas, 569 tests | umbral en 98, ratchet |
+| E2E de navegador | **53 tests** (editor, UX, a11y) | corren en CI con Chromium |
+| Usabilidad medida (no markup) | 22 tests | teclado, foco, táctil, layout, píxeles |
+| a11y (axe-core) | 9 pantallas/estados | incluye la página pública con un tamaño puesto |
+| CI (GitHub Actions) | matriz 3.10–3.13 + job E2E | en cada push |
+| Property-based / fuzzing | `hypothesis` + corpus XSS | máquina de estados cross-store |
+
+Lo que sigue sin cubrir son 8 sentencias inalcanzables desde la API pública: un store que
+se contradice consigo mismo, un `publish` que tendría que ser a la vez un cambio real y un
+no-op, y el fallback de versión para un árbol de fuentes nunca instalado.
 
 **Por qué importa el enfoque, no el número:** los dos bugs reales de la última auditoría
 no eran líneas sin cubrir, eran *clases* de bug que la cobertura por líneas no ve:

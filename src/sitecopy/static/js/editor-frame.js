@@ -69,6 +69,27 @@
     });
   }
 
+  /** Show `key` at `token` right now, on every copy of it on the page.
+   *
+   *  The rules live in the stylesheet the server injected, so this only swaps which one
+   *  applies — nothing here computes a font size, and nothing but a class the server
+   *  emitted can end up on the element. `base` means "the site's own size", so it drops
+   *  the class rather than adding one. */
+  function applySize(key, token) {
+    document.querySelectorAll("ct-t").forEach((node) => {
+      if (parseTarget(node).key !== key) return;
+      Array.from(node.classList).forEach((name) => {
+        if (name.indexOf("sc-s-") === 0) node.classList.remove(name);
+      });
+      if (token && token !== "base") {
+        node.classList.add("sc-s-" + token);
+        node.setAttribute("data-s", token);
+      } else {
+        node.removeAttribute("data-s");
+      }
+    });
+  }
+
   function parseTarget(node) {
     const label = node.getAttribute("data-k") || "";
     const hash = label.indexOf("#");
@@ -742,6 +763,8 @@
       CURRENT[data.key] = data.value;
       refresh(data.key);
       refreshDependents(data.key);
+    } else if (data.type === "size") {
+      applySize(data.key, data.token);
     } else if (data.type === "highlight") {
       document.querySelectorAll("ct-t[data-ct-invalid]").forEach((node) =>
         node.removeAttribute("data-ct-invalid")

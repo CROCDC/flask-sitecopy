@@ -104,6 +104,9 @@ def create_app(config: dict | None = None) -> Flask:
             "selector": ".product-card, .product-hero",
             "message": "El nombre y el precio salen del catálogo de productos, no de acá.",
         },
+        # Let the editor change how big a text renders. Off by default in the library;
+        # the demo turns it on so the control is there to try.
+        text_sizes=True,
     )
 
     with app.app_context():

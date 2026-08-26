@@ -5,7 +5,17 @@ from __future__ import annotations
 import pytest
 from markupsafe import Markup
 
-from sitecopy import resolver, t, t_lines, t_optional
+from sitecopy import (
+    Group,
+    MemoryStore,
+    Registry,
+    Section,
+    TextField,
+    resolver,
+    t,
+    t_lines,
+    t_optional,
+)
 from sitecopy.state import current_store
 
 from appfactory import build_app
@@ -340,3 +350,85 @@ def test_the_counts_reflect_drafts_and_overrides(app) -> None:
         assert pending_draft_count(group) == 1   # one draft in the group
         assert override_count(group) == 1         # one published override
         assert pending_draft_count() == 1         # one draft site-wide
+
+
+# --- the paths that only run when something has already gone wrong ---------------
+
+
+def test_a_lookup_outside_any_context_answers_instead_of_raising() -> None:
+    """Copy is read from places Flask knows nothing about — a CLI command, a worker,
+    an import-time constant. There is nowhere to cache, and that is not an error."""
+    assert resolver._cache() == {}
+
+
+def test_a_write_inside_an_app_context_drops_the_snapshot_it_made_stale(app) -> None:
+    """A CLI command that saves and then re-reads inside ONE app context kept serving
+    the values from before its own write."""
+    with app.app_context():
+        assert t("home.hero.body") == "Un párrafo cualquiera."
+        current_store().set_published("home.hero.body", "Después del write.")
+        resolver.save()
+        assert t("home.hero.body") == "Después del write."
+
+
+def test_an_unknown_key_renders_empty_in_production_instead_of_raising(app, caplog) -> None:
+    """Debug and test raise on purpose, so a typo fails in CI. In production a missing
+    key must never be the reason a page 500s."""
+    app.config["TESTING"] = False
+    with app.test_request_context("/"):
+        assert resolver.editable("no.existe") == ""
+        assert resolver.editable_lines("no.existe") == []
+    assert any("Unknown site-text key" in r.message for r in caplog.records)
+
+
+def test_a_store_that_cannot_answer_for_previous_values_does_not_break_the_screen(app) -> None:
+    """`field_state` feeds every admin screen; an unreachable database there must
+    degrade to "there is no way back", not to a 500."""
+
+    class Broken(MemoryStore):
+        def previous_map(self):
+            raise RuntimeError("la base no está")
+
+    broken = build_app(store=Broken())
+    with broken.test_request_context("/"):
+        assert resolver.field_state("home.hero.body")["previous"] is None
+
+
+def test_every_global_token_can_be_read_at_once() -> None:
+    """For a route or a service that needs several of them without going through t()."""
+    app = build_app()
+    with app.test_request_context("/"):
+        values = resolver.tokens()
+    assert values["brand"] == "Acme"
+    assert "year" in values
+
+
+def test_a_media_token_is_re_checked_before_it_reaches_a_src() -> None:
+    """A shared logo promoted to a site-wide token lands in `src="…"` on every page, so
+    it gets the same guard a media FIELD gets — a value that reached the table some
+    other way must not turn every picture on the site into a navigation."""
+    registry = Registry(
+        groups=(
+            Group(
+                "g",
+                "Grupo",
+                "",
+                sections=(
+                    Section(
+                        "s",
+                        "Sección",
+                        fields=(
+                            TextField("global.logo", "Logo", "/static/logo.png", type="image"),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        tokens=("global.logo",),
+    )
+    app = build_app(registry=registry)
+    with app.app_context():
+        current_store().set_published("global.logo", "javascript:alert(1)")
+        resolver.save()
+    with app.test_request_context("/"):
+        assert resolver.token("logo") == "/static/logo.png"

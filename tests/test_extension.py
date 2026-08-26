@@ -248,3 +248,12 @@ def test_an_existing_jinja_global_is_not_clobbered() -> None:
     db.init_app(app)
     SiteCopy(app, registry=build_registry(), db=db, password="a")
     assert app.jinja_env.globals["t"]("x") == "el mío"
+
+
+def test_an_app_that_serves_no_static_folder_simply_has_no_uploads() -> None:
+    """There is nowhere to put the bytes, so uploads are off rather than broken — the
+    editor still edits media by URL."""
+    app = Flask(__name__, static_folder=None)
+    app.config.update(TESTING=True, SECRET_KEY="test", SITECOPY_PASSWORD="x")
+    state = SiteCopy().init_app(app, registry=build_registry(), store=MemoryStore())
+    assert state.file_store is None

@@ -27,7 +27,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -e ".[test]"
-      - run: pytest --cov --cov-report=term-missing --cov-fail-under=94
+      - run: pytest --cov --cov-report=term-missing --cov-fail-under=98
 
   release:
     name: build + publish to PyPI

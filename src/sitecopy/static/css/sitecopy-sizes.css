@@ -1,0 +1,21 @@
+/* Text sizes, the whole scale, as a static file.
+ *
+ * Only used when the host passes `text_sizes_css="link"` — for a Content-Security-Policy
+ * with no "unsafe-inline" for styles, where the per-page <style> the library normally
+ * injects would be dropped. Everyone else gets just the rules their page uses, inline.
+ *
+ * Sizes are relative on purpose: a multiple of whatever size the element already had, so
+ * the site's own responsive type scale keeps deciding the absolute size. `base` (1em)
+ * has no rule — it is the absence of an override, not a size.
+ *
+ * Generated from sitecopy/sizes.py; tests/test_sizes.py fails if the two drift.
+ */
+
+.sc-s { display: inline; }
+.sc-s-block { display: block; }
+
+.sc-s-xs { font-size: 0.8em; }  /* Más chico */
+.sc-s-sm { font-size: 0.9em; }  /* Chico */
+.sc-s-lg { font-size: 1.15em; }  /* Grande */
+.sc-s-xl { font-size: 1.35em; }  /* Más grande */
+.sc-s-2xl { font-size: 1.6em; }  /* Enorme */

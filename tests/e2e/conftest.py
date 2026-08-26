@@ -81,16 +81,23 @@ def base_url(_e2e_db) -> str:
         "PYTHONPATH": str(REPO_ROOT / "src") + os.pathsep + str(REPO_ROOT),
     }
 
+    # A FILE, not a PIPE. The dev server logs every request, and nothing in this process
+    # ever reads that pipe — so once its ~64KB buffer filled, the server blocked forever
+    # on its own log write and every later test timed out navigating. It showed up as
+    # "the tests at the end of the file fail, but pass when run alone".
+    log_path = db_path.parent / "server.log"
+    log = log_path.open("wb")
+
     proc = subprocess.Popen(
         [sys.executable, str(Path(__file__).parent / "_server.py")],
         env=env,
         cwd=str(REPO_ROOT),
-        stdout=subprocess.PIPE,
+        stdout=log,
         stderr=subprocess.STDOUT,
     )
     url = f"http://127.0.0.1:{port}"
     try:
-        _wait_until_up(url, proc)
+        _wait_until_up(url, proc, log_path)
         yield url
     finally:
         proc.terminate()
@@ -98,13 +105,16 @@ def base_url(_e2e_db) -> str:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             proc.kill()
+        log.close()
 
 
-def _wait_until_up(url: str, proc: subprocess.Popen, timeout: float = 20.0) -> None:
+def _wait_until_up(
+    url: str, proc: subprocess.Popen, log_path: Path, timeout: float = 20.0
+) -> None:
     deadline = time.time() + timeout
     while time.time() < deadline:
         if proc.poll() is not None:
-            out = proc.stdout.read().decode(errors="replace") if proc.stdout else ""
+            out = log_path.read_text(errors="replace") if log_path.exists() else ""
             raise RuntimeError(f"demo server exited early:\n{out}")
         try:
             with urllib.request.urlopen(url, timeout=1) as r:
