@@ -150,21 +150,37 @@ def test_external_content_tooltip_on_the_product_page(editor):
     assert "catálogo" in tip.first.inner_text()
 
 
-def test_attribute_copy_opens_in_the_panel(editor):
+def test_a_pictures_alt_text_opens_with_the_picture(editor):
+    """The alt text lives on the same element as the picture, so it opens with it. It
+    used to be reached by opening the panel; now it is one field down in the dialog the
+    click already produced."""
     editor.canvas.locator(".hero-photo").click()
     editor.page.wait_for_timeout(400)
-    assert not editor.page.locator("[data-ed-panel]").is_hidden()
+    # By attribute: these ids carry the registry key, and a dotted key in a CSS
+    # selector reads as a class.
+    alt = editor.page.locator('[id="ed-media-extra-home.hero.alt"]')
+    assert alt.is_visible()
+    assert alt.input_value() == "Un bolso sobre una mesa de madera"
+    alt.fill("Una mochila de cactus sobre una mesa")
+    editor.page.wait_for_timeout(400)
+    # It stages like any other text. The canvas does not repaint an `alt`: it is an
+    # attribute the editor cannot generically find, which is exactly why this copy needs
+    # a control at all — and was true of the panel before this dialog existed.
+    assert editor.page.locator("[data-ed-pending]").inner_text() == "1"
+    editor.page.locator("[data-ed-media-done]").click()
+    editor.page.wait_for_timeout(300)
+    assert editor.field_input("home.hero.alt").input_value() == "Una mochila de cactus sobre una mesa"
 
 
 def test_an_image_url_swaps_the_picture_live(editor):
-    """Clicking the hero <img> opens its `image` field in the panel; pasting a new URL
-    updates the picture on the canvas without a reload."""
+    """Clicking the hero <img> opens its own controls; pasting a new URL updates the
+    picture on the canvas without a reload."""
     photo = editor.canvas.locator(".hero-photo")
     assert photo.get_attribute("src") == "/static/hero.svg"
 
     photo.click()
     editor.page.wait_for_timeout(400)
-    box = editor.field_input("home.hero.image")
+    box = editor.page.locator("[data-ed-media] .ed-media-url").first
     box.fill("/static/other.svg")
     editor.page.wait_for_timeout(300)
 
@@ -186,20 +202,25 @@ def test_uploading_a_file_swaps_the_picture_and_records_a_version(editor, tmp_pa
     photo = editor.canvas.locator(".hero-photo")
     photo.click()
     editor.page.wait_for_timeout(400)
-    field = editor.page.locator('[data-ed-field="home.hero.image"]')
+    field = editor.page.locator("[data-ed-media]")
     assert field.locator("button", has_text="Subir una imagen").count() == 1
 
     field.locator('input[type="file"]').set_input_files(str(png))
     editor.page.wait_for_timeout(1000)
 
-    value = editor.field_input("home.hero.image").input_value()
+    value = field.locator(".ed-media-url").first.input_value()
     assert "/static/sitecopy-uploads/" in value
     assert "/static/sitecopy-uploads/" in (photo.get_attribute("src") or "")
 
     # Publish it, then the gallery lists both the uploaded file and the "Original".
+    # The dialog is modal, so it closes first — Publicar lives behind it.
+    editor.page.locator("[data-ed-media-done]").click()
+    editor.page.wait_for_timeout(300)
     editor.page.on("dialog", lambda d: d.accept())
     editor.page.locator("[data-ed-publish]").click()
     editor.page.wait_for_timeout(1200)
+    photo.click()
+    editor.page.wait_for_timeout(500)
     field.locator("button", has_text="Ver versiones anteriores").click()
     editor.page.wait_for_timeout(700)
     assert field.locator(".ed-media-thumb").count() >= 2  # uploaded + Original
@@ -220,13 +241,13 @@ def test_a_dangerous_image_url_shows_no_preview(editor):
     photo = editor.canvas.locator(".hero-photo")
     photo.click()
     editor.page.wait_for_timeout(400)
-    box = editor.field_input("home.hero.image")
+    box = editor.page.locator("[data-ed-media] .ed-media-url").first
     box.fill("javascript:alert(1)")
     editor.page.wait_for_timeout(300)
 
-    # Neither the canvas image nor the panel thumbnail carries the dangerous value.
+    # Neither the canvas image nor the dialog's own preview carries the dangerous value.
     assert not (photo.get_attribute("src") or "").lower().startswith("javascript:")
-    thumb = editor.page.locator('[data-ed-field="home.hero.image"] .ed-media-preview')
+    thumb = editor.page.locator("[data-ed-media] .ed-media-preview")
     assert not (thumb.get_attribute("src") or "").lower().startswith("javascript:")
     assert not any("ERR_UNKNOWN_URL_SCHEME" in e for e in editor.console_errors)
 
@@ -354,3 +375,100 @@ def test_a_text_that_is_not_visible_on_the_page_says_why_it_has_no_size(editor):
     assert "no se ve en la página" in editor.page.locator(
         '[data-ed-field="home.meta.title"] .ed-field-size-why'
     ).inner_text()
+
+
+# --- editing the thing you clicked ------------------------------------------------
+
+
+def test_clicking_a_picture_opens_its_own_controls_not_the_panel(editor):
+    """The thing that was clicked is the thing to change. This used to open the side
+    panel and scroll to a field — a correct answer to a question nobody asked."""
+    editor.canvas.locator("img.hero-photo").click()
+    editor.page.wait_for_timeout(400)
+
+    dialog = editor.page.locator("[data-ed-media]")
+    assert dialog.is_visible()
+    assert "Foto" in dialog.locator("[data-ed-media-title]").inner_text()
+    assert dialog.locator("button:has-text('Subir una imagen')").is_visible()
+    assert dialog.locator("button:has-text('Ver versiones anteriores')").is_visible()
+    # And the panel stayed where it was.
+    assert editor.page.locator("[data-ed-panel]").is_hidden()
+
+
+def test_the_picture_dialog_shows_the_url_it_is_pointing_at(editor):
+    editor.canvas.locator("img.hero-photo").click()
+    editor.page.wait_for_timeout(400)
+    url = editor.page.locator("[data-ed-media] .ed-media-url").input_value()
+    assert url.endswith(".svg") or url.startswith("/static")
+
+
+def test_typing_a_new_url_in_the_dialog_changes_the_picture_on_the_canvas(editor):
+    editor.canvas.locator("img.hero-photo").click()
+    editor.page.wait_for_timeout(400)
+    box = editor.page.locator("[data-ed-media] .ed-media-url")
+    box.fill("/static/otra.svg")
+    editor.page.wait_for_timeout(400)
+    assert editor.canvas.locator("img.hero-photo").get_attribute("src") == "/static/otra.svg"
+    assert editor.page.locator("[data-ed-pending]").inner_text() == "1"
+
+
+def test_closing_the_picture_dialog_gives_focus_back(editor):
+    editor.canvas.locator("img.hero-photo").click()
+    editor.page.wait_for_timeout(400)
+    editor.page.locator("[data-ed-media-done]").click()
+    editor.page.wait_for_timeout(300)
+    assert editor.page.locator("[data-ed-media]").is_hidden()
+
+
+def test_text_that_only_lives_in_an_attribute_still_opens_in_the_panel(editor):
+    """A picture has controls of its own; a menu's screen-reader name does not — there is
+    nowhere on the page to type it, so that one still belongs in the panel. Driven by
+    keyboard because this nav is wall-to-wall links: a click on one is deliberately left
+    to the site, or the menu would be dead in the editor."""
+    editor.canvas.locator("nav[data-ct-keys]").first.focus()
+    editor.page.keyboard.press("Enter")
+    editor.page.wait_for_timeout(600)
+    assert editor.page.locator("[data-ed-media]").is_hidden()
+    assert editor.page.locator("[data-ed-panel]").is_visible()
+    assert editor.field_input("global.nav.label").input_value() == "Menú principal"
+
+
+def test_a_picture_reached_by_keyboard_opens_its_controls_too(editor):
+    """The same fork, on the path a mouse never takes."""
+    editor.canvas.locator("img.hero-photo").focus()
+    editor.page.keyboard.press("Enter")
+    editor.page.wait_for_timeout(600)
+    assert editor.page.locator("[data-ed-media]").is_visible()
+
+
+def test_the_page_body_editor_carries_the_size_control(editor):
+    """The popup is where that text is actually being edited, so it is where its size
+    belongs — not in a list on the other side of the screen."""
+    editor.page.select_option("[data-ed-page]", "/nosotros")
+    editor.page.wait_for_timeout(1500)
+    editor.ct("about.body").click()
+    editor.page.wait_for_timeout(500)
+
+    sheet = editor.page.locator("[data-ed-sheet]")
+    assert sheet.is_visible()
+    select = sheet.locator("select.ed-size-select")
+    assert select.is_visible()
+    select.select_option("lg")
+    editor.page.wait_for_timeout(300)
+    assert editor.page.locator("[data-ed-pending]").inner_text() == "1"
+
+
+def test_cancelling_the_page_body_editor_puts_the_size_back(editor):
+    """A size stages the moment it is picked, so Cancelar has to undo it — otherwise one
+    of the two things this popup edits would ignore its own cancel button."""
+    editor.page.select_option("[data-ed-page]", "/nosotros")
+    editor.page.wait_for_timeout(1500)
+    editor.ct("about.body").click()
+    editor.page.wait_for_timeout(500)
+    editor.page.locator("[data-ed-sheet] select.ed-size-select").select_option("xl")
+    editor.page.wait_for_timeout(300)
+
+    editor.page.once("dialog", lambda d: d.accept())
+    editor.page.locator("[data-ed-sheet-cancel]").first.click()
+    editor.page.wait_for_timeout(500)
+    assert editor.page.locator("[data-ed-pending]").is_hidden()

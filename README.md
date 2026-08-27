@@ -379,11 +379,15 @@ Tokens are interpolated **before** sanitizing, so a token's value is treated as 
 `/admin/content/` is the front door: the live site in a frame, edited in place.
 
 - **Click any text and type over it.** Nothing is live until you publish.
-- **Copy with no visible text** — the `<title>`, the meta description, image `alt`s,
-  aria-labels — is in the side panel. Clicking an image opens its alt text there.
+- **Click a picture and change it there.** Its own controls open over the canvas —
+  preview, upload, the version gallery — plus the alt text that lives on the same
+  element. No trip to the panel.
+- **Copy with no visible text** — the `<title>`, the meta description, aria-labels — is
+  in the side panel: there is nowhere on the page to type it.
 - **Unsaved edits travel with you** across pages, and stay listed in the panel.
 - **How big a text renders** is a dropdown beside it, when the site turns
-  [text sizes](#text-sizes) on. The canvas changes as you pick.
+  [text sizes](#text-sizes) on — in the panel, and in the popup that edits a whole page
+  body. The canvas changes as you pick.
 - **Device widths** and **share/search cards** (Google, WhatsApp, Twitter/X) are built
   from the previewed document's own `<title>` and `meta` tags, so there is no second
   implementation of your metadata logic to drift out of sync.

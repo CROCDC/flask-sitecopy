@@ -128,3 +128,22 @@ def test_the_public_page_stays_accessible_with_a_size_applied(editor, base_url):
     finally:
         pub.close()
     assert not v, "a11y violations on the public page with a size:\n" + _fmt(v)
+
+
+def test_the_picture_dialog_is_accessible(editor):
+    """A new dialog opened from the canvas is a new way to fail a screen reader."""
+    editor.canvas.locator("img.hero-photo").click()
+    editor.page.wait_for_timeout(500)
+    v = _blocking(editor.page)
+    assert not v, "a11y violations in the picture dialog:\n" + _fmt(v)
+
+
+def test_the_page_body_editor_stays_accessible_with_its_size_control(editor):
+    """The popup that edits a whole page body now carries a size control too."""
+    editor.page.select_option("[data-ed-page]", "/nosotros")
+    editor.page.wait_for_timeout(1500)
+    editor.ct("about.body").click()
+    editor.page.wait_for_timeout(600)
+    assert editor.page.locator("[data-ed-sheet]").is_visible()
+    v = _blocking(editor.page)
+    assert not v, "a11y violations in the page-body editor:\n" + _fmt(v)
