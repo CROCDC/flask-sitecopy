@@ -636,7 +636,14 @@
         event.preventDefault();
         event.stopPropagation();
         stopEditing();
-        post({ type: "openKeys", keys: (owner.getAttribute("data-ct-keys") || "").split(/\s+/) });
+        // A picture or a clip opens its OWN controls — preview, upload, earlier
+        // versions — because the thing that was clicked is the thing to change. The
+        // rest of what lives in an attribute (an alt text, an aria-label) is copy with
+        // nowhere on the page to edit it, so that still opens in the panel.
+        const keys = (owner.getAttribute("data-ct-keys") || "").split(/\s+/).filter(Boolean);
+        const media = mediaKeyOf(owner);
+        if (media) post({ type: "openMedia", key: media, keys: keys });
+        else post({ type: "openKeys", keys: keys });
         return;
       }
       if (editing) stopEditing();
@@ -838,6 +845,10 @@
 
   let mediaChip = null;
   let mediaChipFor = null;
+  // Everything that element carries — the picture AND its alt text — so the dialog can
+  // offer all of it. They live on the same element; splitting them across two screens is
+  // what sent people hunting.
+  let mediaChipKeys = [];
   let mediaChipHideTimer = null;
 
   function mediaKeyOf(el) {
@@ -860,7 +871,7 @@
     mediaChip.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      if (mediaChipFor) post({ type: "openKeys", keys: [mediaChipFor] });
+      if (mediaChipFor) post({ type: "openMedia", key: mediaChipFor, keys: mediaChipKeys });
     });
     mediaChip.addEventListener("mouseenter", () => {
       if (mediaChipHideTimer) window.clearTimeout(mediaChipHideTimer);
@@ -873,6 +884,7 @@
   function showMediaChip(el, key) {
     const chip = ensureMediaChip();
     mediaChipFor = key;
+    mediaChipKeys = (el.getAttribute("data-ct-keys") || "").split(/\s+/).filter(Boolean);
     chip.textContent =
       (FIELDS[key] || {}).type === "video" ? "✎ Cambiar video" : "✎ Cambiar imagen";
     const box = el.getBoundingClientRect();
@@ -919,7 +931,10 @@
     }
     if (node.hasAttribute && node.hasAttribute("data-ct-keys")) {
       event.preventDefault();
-      post({ type: "openKeys", keys: (node.getAttribute("data-ct-keys") || "").split(/\s+/) });
+      const keys = (node.getAttribute("data-ct-keys") || "").split(/\s+/).filter(Boolean);
+      const media = mediaKeyOf(node);
+      if (media) post({ type: "openMedia", key: media, keys: keys });
+      else post({ type: "openKeys", keys: keys });
     }
   });
 

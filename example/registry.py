@@ -142,6 +142,11 @@ GLOBAL = Group(
             title="Pie de página",
             fields=(
                 TextField("global.footer.note", "Nota del pie", "© {year} {brand}. {tagline}"),
+                # Copy that lives ONLY in an attribute: there is nowhere on the page to
+                # click it, so the editor opens it in the side panel. A picture is the
+                # other case — it has controls of its own — and the two paths part ways
+                # on exactly this distinction.
+                TextField("global.nav.label", "Nombre del menú (lectores de pantalla)", "Menú principal"),
             ),
         ),
     ),

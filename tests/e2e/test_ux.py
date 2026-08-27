@@ -347,3 +347,60 @@ def test_a_pending_size_survives_moving_the_canvas_to_another_page(editor):
     row = editor.page.locator(f'[data-ed-field="{TITLE}"]')
     assert row.count() == 1, "the pending size counts but has no row in the panel"
     assert size_select(editor).input_value() == "xl"
+
+
+# --- editing the thing you clicked ------------------------------------------------
+
+
+def open_picture(editor):
+    editor.canvas.locator("img.hero-photo").click()
+    editor.page.wait_for_timeout(500)
+    return editor.page.locator("[data-ed-media]")
+
+
+def test_the_picture_dialog_can_be_closed_with_escape(editor):
+    """A modal that traps focus has to have a way out that needs no aim."""
+    open_picture(editor)
+    editor.page.keyboard.press("Escape")
+    editor.page.wait_for_timeout(300)
+    assert editor.page.locator("[data-ed-media]").is_hidden()
+
+
+def test_focus_cannot_wander_out_of_the_picture_dialog(editor):
+    """`aria-modal="true"` is a promise: a keyboard user must not tab out into a page
+    they cannot see behind the overlay."""
+    dialog = open_picture(editor)
+    for _ in range(12):
+        editor.page.keyboard.press("Tab")
+    inside = dialog.evaluate("el => el.contains(document.activeElement)")
+    assert inside
+
+
+def test_every_control_in_the_picture_dialog_is_big_enough_to_hit(editor):
+    dialog = open_picture(editor)
+    for button in dialog.locator("button").all():
+        if not button.is_visible():
+            continue
+        assert button.bounding_box()["height"] >= MIN_TOUCH
+
+
+def test_the_picture_dialog_never_scrolls_sideways_on_a_phone(editor):
+    editor.page.set_viewport_size(PHONE)
+    dialog = open_picture(editor)
+    overflow = dialog.evaluate(
+        "el => { const p = el.querySelector('.ed-media-panel'); return p.scrollWidth - p.clientWidth; }"
+    )
+    assert overflow <= 1
+
+
+def test_the_size_control_in_the_popup_is_big_enough_and_named(editor, base_url):
+    editor.page.select_option("[data-ed-page]", "/nosotros")
+    editor.page.wait_for_timeout(1500)
+    editor.ct("about.body").click()
+    editor.page.wait_for_timeout(500)
+    select = editor.page.locator("[data-ed-sheet] select.ed-size-select")
+    assert select.bounding_box()["height"] >= MIN_TOUCH
+    name = select.evaluate(
+        "el => (el.labels && el.labels.length ? el.labels[0].textContent : '').trim()"
+    )
+    assert name == "Tamaño"
