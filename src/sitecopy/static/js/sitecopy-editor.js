@@ -540,21 +540,25 @@
 
   /** The size picker for one field, appended to `wrap`. Returns the <select>, or null
    *  where this install (or this field) has no size to offer. */
-  function buildSizeControl(wrap, field, key) {
+  function buildSizeControl(wrap, field, key, idPrefix) {
     const steps = manifest.sizes || [];
     if (!steps.length || !field.resizable) return null;
+    // The panel renders one of these per field and the sheet renders another for the
+    // field it is editing, so the id has to say WHICH — two elements sharing one id
+    // break every `<label for>` on the page, starting with these two.
+    const id = (idPrefix || "ed-size-") + key;
 
     const box = document.createElement("div");
     box.className = "ed-field-size";
 
     const label = document.createElement("label");
     label.className = "ed-field-size-label";
-    label.htmlFor = "ed-size-" + key;
+    label.htmlFor = id;
     label.textContent = "Tamaño";
     box.appendChild(label);
 
     const select = document.createElement("select");
-    select.id = "ed-size-" + key;
+    select.id = id;
     select.className = "ed-size-select";
     steps.forEach((step) => {
       const option = document.createElement("option");
@@ -572,7 +576,7 @@
       select.disabled = true;
       const why = document.createElement("p");
       why.className = "ed-field-size-why";
-      why.id = "ed-size-why-" + key;
+      why.id = id + "-why";
       why.textContent =
         "Este texto no se ve en la página (está en el título de la pestaña, en una " +
         "descripción o en un dato para buscadores), así que no cambia de tamaño.";
@@ -888,6 +892,8 @@
       item.dataset.edSearch = searchable((field.label || key) + " " + key + " " + value);
     });
     if (renderers[key]) renderers[key]();
+    // The canvas dialog, when it is the thing showing this field.
+    if (mediaSync && mediaSyncKeys.indexOf(key) !== -1) mediaSync();
   }
 
   /** Pick a size for `key`. Staged like any other change, and shown on the canvas at
@@ -1024,6 +1030,8 @@
       if (current) fitDevice(current);
     } else if (data.type === "change") {
       stageChange(data.key, data.value);
+    } else if (data.type === "openMedia") {
+      openMediaDialog(data.key, data.keys);
     } else if (data.type === "openRich") {
       openSheet(data.key, data.value);
     } else if (data.type === "openKeys") {
@@ -1046,6 +1054,153 @@
     }
   });
 
+  /* ---------------- media, opened from the canvas ---------------- */
+
+  const mediaDialog = root.querySelector("[data-ed-media]");
+  const mediaBody = mediaDialog && mediaDialog.querySelector("[data-ed-media-body]");
+  let mediaKey = null;
+  let mediaReturnFocus = null;
+  // Set while the dialog is open so a change staged from anywhere — its own upload, its
+  // version gallery — is reflected in the preview it is showing. `stageChange` calls it.
+  let mediaSync = null;
+  let mediaSyncKeys = [];
+
+  /** The picture's own controls, over the canvas, for the picture that was clicked.
+   *
+   *  Everything here already existed for the side panel: the preview, the upload button,
+   *  the version gallery, and the staging they do. What was missing was a door from the
+   *  thing itself — clicking the hero used to open the panel and scroll to a field, which
+   *  answers a question nobody asked. */
+  function openMediaDialog(key, keys) {
+    const field = fieldFor(key);
+    if (!mediaDialog || !field || (field.type !== "image" && field.type !== "video")) return;
+    mediaKey = key;
+    mediaReturnFocus = document.activeElement;
+
+    mediaDialog.querySelector("[data-ed-media-title]").textContent = field.label;
+    mediaDialog.querySelector("[data-ed-media-where]").textContent =
+      field.section && field.section !== field.groupTitle
+        ? field.groupTitle + " · " + field.section
+        : field.groupTitle;
+
+    mediaBody.textContent = "";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.inputMode = "url";
+    input.className = "ed-media-url";
+    input.id = "ed-media-url-" + key;
+    input.value = valueOf(key);
+    input.maxLength = field.max;
+    const label = document.createElement("label");
+    label.className = "ed-field-size-label";
+    label.htmlFor = input.id;
+    label.textContent = field.type === "video" ? "Link del video" : "Link de la imagen";
+    mediaBody.appendChild(label);
+    mediaBody.appendChild(input);
+
+    const preview = buildMediaControls(mediaBody, field, key, input);
+
+    // Everything else that element carries — its alt text, an aria-label — belongs here
+    // too. It is on the same element, and sending someone to the panel for half of what
+    // they clicked is the thing this dialog exists to stop.
+    const extras = [];
+    (keys || []).forEach((other) => {
+      if (other === key) return;
+      const sidecar = fieldFor(other);
+      if (!sidecar || sidecar.type === "image" || sidecar.type === "video") return;
+      const box = document.createElement("div");
+      box.className = "ed-media-extra";
+      const tag = document.createElement("label");
+      tag.className = "ed-field-size-label";
+      tag.htmlFor = "ed-media-extra-" + other;
+      tag.textContent = sidecar.label;
+      const field2 = document.createElement("input");
+      field2.type = "text";
+      field2.id = tag.htmlFor;
+      // Its own class: `.ed-media-url` has to keep meaning "the media location", or a
+      // selector for the picture's URL silently starts matching its alt text too.
+      field2.className = "ed-media-extra-input";
+      field2.maxLength = sidecar.max;
+      field2.value = valueOf(other);
+      field2.addEventListener("input", () => stageChange(other, field2.value));
+      box.appendChild(tag);
+      box.appendChild(field2);
+      mediaBody.appendChild(box);
+      extras.push({ key: other, input: field2 });
+    });
+
+    function sync() {
+      const url = String(valueOf(key)).trim();
+      if (input.value !== url) input.value = url;
+      if (url && safeHref(url)) preview.src = url;
+      else { preview.removeAttribute("src"); preview.hidden = true; }
+      extras.forEach((extra) => {
+        const value = String(valueOf(extra.key));
+        if (extra.input.value !== value) extra.input.value = value;
+      });
+    }
+    input.addEventListener("input", () => { stageChange(key, input.value); });
+    mediaSync = sync;
+    mediaSyncKeys = [key].concat(extras.map((e) => e.key));
+    sync();
+
+    mediaDialog.hidden = false;
+    document.body.classList.add("ed-sheet-open");
+    if ("inert" in HTMLElement.prototype) {
+      Array.from(root.children).forEach((child) => {
+        if (child !== mediaDialog) child.inert = true;
+      });
+    }
+    input.focus();
+  }
+
+  function closeMediaDialog() {
+    if (!mediaDialog || mediaDialog.hidden) return;
+    // Nothing to confirm: an upload and a version pick stage the moment they happen,
+    // exactly as they do in the panel, and Descartar is the way back from both.
+    mediaSync = null;
+    mediaSyncKeys = [];
+    mediaKey = null;
+    mediaDialog.hidden = true;
+    document.body.classList.remove("ed-sheet-open");
+    if ("inert" in HTMLElement.prototype) {
+      Array.from(root.children).forEach((child) => {
+        child.inert = false;
+      });
+    }
+    if (mediaReturnFocus && mediaReturnFocus.focus) mediaReturnFocus.focus();
+  }
+
+  if (mediaDialog) {
+    mediaDialog
+      .querySelectorAll("[data-ed-media-close], [data-ed-media-done]")
+      .forEach((btn) => btn.addEventListener("click", closeMediaDialog));
+    mediaDialog.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeMediaDialog();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      // aria-modal="true" is a promise: focus does not leave until this closes.
+      const items = Array.from(
+        mediaDialog.querySelectorAll(
+          'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((el) => el.offsetWidth || el.offsetHeight || el === document.activeElement);
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+  }
+
   /* ---------------- page-body editor ---------------- */
 
   const sheet = root.querySelector("[data-ed-sheet]");
@@ -1057,6 +1212,10 @@
   // stages — so an Escape reflex threw away a whole rewritten page with no confirm and
   // no badge that had ever shown there was something to lose.
   let sheetOpenedWith = null;
+  // The size the sheet opened at. Unlike the text it edits, a size stages the moment it
+  // is picked (that is what makes the canvas show it), so Cancelar has to put it back —
+  // otherwise one of the two things this popup edits would ignore its own cancel button.
+  let sheetOpenedSize = null;
 
   /** What a reader actually sees. The old counter measured the HTML, so an emptied
    *  body reported "7 / 12000" and a paste of markup burned budget invisibly. */
@@ -1184,6 +1343,13 @@
     const tokens = root.querySelector("[data-ed-sheet-tokens]");
     tokens.textContent = tokenNote(value != null ? value : field.raw);
     tokens.hidden = !tokens.textContent;
+
+    // How big it renders, beside the text it belongs to rather than in a list on the
+    // other side of the screen.
+    const sizeSlot = root.querySelector("[data-ed-sheet-size]");
+    sizeSlot.textContent = "";
+    buildSizeControl(sizeSlot, field, key, "ed-sheet-size-");
+    sheetOpenedSize = sizeOf(key);
     sheetDoc.innerHTML = sanitizeRich(value != null ? value : field.raw);
     sheetOpenedWith = sheetDoc.innerHTML;
     sheet.hidden = false;
@@ -1201,12 +1367,19 @@
   }
 
   function closeSheet(applied) {
-    if (!applied && sheetKey && sheetDoc.innerHTML !== sheetOpenedWith) {
-      const message =
-        "Vas a cerrar «" + ((fieldFor(sheetKey) || {}).label || sheetKey) + "» sin aplicar.\n\n" +
-        "Se pierde lo que escribiste acá.";
-      if (!window.confirm(message)) return;
+    const sizeMoved = Boolean(sheetKey) && sizeOf(sheetKey) !== sheetOpenedSize;
+    if (!applied && sheetKey && (sheetDoc.innerHTML !== sheetOpenedWith || sizeMoved)) {
+      const label = (fieldFor(sheetKey) || {}).label || sheetKey;
+      const lost =
+        sheetDoc.innerHTML !== sheetOpenedWith
+          ? "Se pierde lo que escribiste acá"
+          : "Vuelve al tamaño que tenía";
+      if (!window.confirm("Vas a cerrar «" + label + "» sin aplicar.\n\n" + lost + ".")) return;
     }
+    // Cancelling puts the size back where the popup found it. Applied or not, the text
+    // is handled by the caller; the size staged live and has to be undone here.
+    if (!applied && sheetKey && sizeMoved) stageSize(sheetKey, sheetOpenedSize);
+    sheetOpenedSize = null;
     sheetOpenedWith = null;
     sheet.hidden = true;
     showSheetNote("");

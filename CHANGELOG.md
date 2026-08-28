@@ -4,6 +4,29 @@ All notable changes to **flask-sitecopy** are documented here. The format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [0.6.0] — 2026-08-28
+
+### Changed
+
+- **Clicking a picture on the canvas opens its own controls**, over the page, instead of
+  opening the side panel and scrolling to a field. Preview, upload and the version
+  gallery are all there — plus the alt text that lives on the same element, so one click
+  reaches everything that picture carries. Copy that exists only in an attribute with no
+  picture attached (a menu's screen-reader name, say) still opens in the panel: there is
+  nowhere on the page to type it. Reachable by keyboard on the same element.
+- **The page-body popup carries the text's size**, beside the formatting bar, when the
+  install has `text_sizes` on. It stages live so the canvas shows it, and *Cancelar* puts
+  it back — the popup's cancel button now covers both things it edits.
+
+### Fixed
+
+- `.ed-media-btn` (upload, version gallery) was 33px tall, under the 44px touch target
+  every other control on these screens keeps. Missed until the canvas dialog put those
+  two buttons in front of a thumb.
+- The page-body editor carried `aria-multiline` on an element with no `role="textbox"`,
+  which is a critical ARIA violation. It was invisible to the a11y suite because nothing
+  had ever opened that popup during the scan.
+
 ## [0.5.0] — 2026-08-26
 
 ### Added
@@ -156,6 +179,7 @@ Earlier release — see the [git history](https://github.com/CROCDC/flask-siteco
 
 First tagged release.
 
+[0.6.0]: https://github.com/CROCDC/flask-sitecopy/releases/tag/v0.6.0
 [0.5.0]: https://github.com/CROCDC/flask-sitecopy/releases/tag/v0.5.0
 [0.4.0]: https://github.com/CROCDC/flask-sitecopy/releases/tag/v0.4.0
 [0.3.0]: https://github.com/CROCDC/flask-sitecopy/releases/tag/v0.3.0

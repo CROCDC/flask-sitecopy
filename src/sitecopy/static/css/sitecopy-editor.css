@@ -180,6 +180,9 @@ video.ed-media-preview { width: 100%; }
     font: inherit; font-size: 0.82rem; cursor: pointer;
     color: var(--adm-ink); background: var(--adm-card);
     border: 1px solid var(--adm-input-line); border-radius: 8px; padding: 0.35rem 0.7rem;
+    /* 32.9px, under the 44px floor every other control on these screens keeps. Missed
+       until the canvas dialog put these two buttons in front of a thumb. */
+    min-height: 44px; display: inline-flex; align-items: center;
 }
 .ed-media-btn:hover { border-color: var(--adm-accent); color: var(--adm-accent); }
 .ed-media-btn:disabled { opacity: 0.6; cursor: default; }
@@ -342,6 +345,13 @@ body.ed-sheet-open { overflow: hidden; }
 }
 .ed-sheet-tokens[hidden] { display: none; }
 
+/* How big this text renders, above the format bar: it is a property of the whole text,
+   not one more formatting button to apply to a selection. Empty when the install has no
+   sizes, so it collapses to nothing rather than leaving a bare rule. */
+.ed-sheet-size:not(:empty) {
+    padding: 0.6rem 1rem; border-bottom: 1px solid var(--adm-line);
+}
+
 .ed-sheet-tools {
     display: flex; flex-wrap: wrap; gap: 0.35rem;
     padding: 0.6rem 1rem; border-bottom: 1px solid var(--adm-line);
@@ -379,9 +389,57 @@ body.ed-sheet-open { overflow: hidden; }
 .ed-sheet-note { flex: 1 0 100%; margin: 0 0 0.4rem; font-size: 0.8rem; color: var(--adm-accent-dk); }
 .ed-sheet-actions { display: flex; gap: 0.5rem; }
 
+/* The picture's own controls, opened from the canvas. Same chrome as the sheet — this is
+   the other half of "edit the thing you clicked", and two different-looking dialogs for
+   one gesture would read as two different features. */
+.ed-media-dialog {
+    position: fixed; inset: 0; z-index: 200;
+    display: flex; align-items: center; justify-content: center;
+    padding: clamp(0.5rem, 3vw, 2rem);
+    background: rgba(26, 23, 20, 0.55);
+}
+.ed-media-dialog[hidden] { display: none; }
+.ed-media-panel {
+    display: flex; flex-direction: column;
+    width: min(560px, 100%); max-height: 100%;
+    background: var(--adm-card); border-radius: var(--adm-radius);
+    box-shadow: 0 20px 60px rgba(26, 23, 20, 0.35);
+    overflow: hidden;
+}
+.ed-media-head {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem;
+    padding: 0.9rem 1rem; border-bottom: 1px solid var(--adm-line);
+}
+.ed-media-head h2 { margin: 0; font-size: 1.05rem; font-weight: 500; }
+.ed-media-where { margin: 0.1rem 0 0; font-size: 0.78rem; color: var(--adm-soft); }
+.ed-media-close {
+    flex: none; width: 44px; height: 44px; border: none; background: none;
+    font-size: 1.6rem; line-height: 1; color: var(--adm-soft); cursor: pointer; border-radius: 8px;
+}
+.ed-media-close:hover { color: var(--adm-ink); }
+.ed-media-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 1rem; }
+.ed-media-url, .ed-media-extra-input {
+    font-family: inherit; font-size: 16px; width: 100%; color: var(--adm-ink);
+    background: var(--adm-paper); border: 1px solid var(--adm-input-line);
+    border-radius: 8px; padding: 0.5rem 0.6rem; margin-top: 0.25rem;
+}
+.ed-media-url:focus, .ed-media-extra-input:focus { outline: 2px solid var(--adm-accent); outline-offset: 1px; background: #fff; }
+.ed-media-foot {
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    flex-wrap: wrap;
+    padding: 0.7rem 1rem calc(0.7rem + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--adm-line);
+}
+.ed-media-extra { margin-top: 0.9rem; }
+.ed-media-hint { margin: 0; font-size: 0.8rem; color: var(--adm-soft); }
+/* The preview is the point of this dialog, so it gets more room than the panel's. */
+.ed-media-dialog .ed-media-preview { max-height: 44vh; }
+
 @media (max-width: 720px) {
     .ed-sheet { padding: 0; }
     .ed-sheet-panel { width: 100%; height: 100%; max-height: 100%; border-radius: 0; }
     .ed-sheet-actions { flex: 1 1 auto; }
     .ed-sheet-actions .ed-btn { flex: 1 1 auto; justify-content: center; }
+    .ed-media-dialog { padding: 0; }
+    .ed-media-panel { width: 100%; height: 100%; max-height: 100%; border-radius: 0; }
 }

@@ -184,6 +184,11 @@
                mid-sentence and left the reader to guess. #}
             <p class="ed-sheet-tokens" data-ed-sheet-tokens hidden></p>
 
+            {# How big this text renders. Same control as the panel's, here because this
+               popup is where the text is actually being edited — going to look for it in
+               a list on the other side of the screen is how it went unfound. #}
+            <div class="ed-sheet-size" data-ed-sheet-size></div>
+
             <div class="ed-sheet-tools" role="group" aria-label="Formato">
                 <button type="button" class="ed-tool" data-ed-cmd="bold"><b>Negrita</b></button>
                 <button type="button" class="ed-tool" data-ed-cmd="italic"><i>Cursiva</i></button>
@@ -200,8 +205,12 @@
                    and role=textbox flattens it for assistive tech. A contenteditable
                    already exposes an editable region; let the browser surface the real
                    semantics. #}
+                {# No aria-multiline either: it is only defined on role="textbox", and
+                   the comment above says why this deliberately has no role. Left on a
+                   generic element it is a critical ARIA violation — axe never saw it
+                   because nothing opened this popup during the a11y pass. #}
                 <div class="ed-sheet-doc" data-ed-sheet-doc contenteditable="true"
-                     spellcheck="true" aria-multiline="true"
+                     spellcheck="true"
                      aria-labelledby="edSheetTitle"></div>
             </div>
 
@@ -212,6 +221,32 @@
                     <button type="button" class="ed-btn ed-btn-ghost" data-ed-sheet-cancel>Cancelar</button>
                     <button type="button" class="ed-btn ed-btn-primary" data-ed-sheet-apply>Listo</button>
                 </span>
+            </footer>
+        </div>
+    </div>
+
+    {# Clicking a picture on the canvas opens ITS controls, right there. It used to send
+       you to the side panel and scroll to the field, which is a correct answer to a
+       question nobody asked: the thing you clicked is the thing you want to change. #}
+    <div class="ed-media-dialog" data-ed-media hidden role="dialog" aria-modal="true"
+         aria-labelledby="edMediaTitle">
+        <div class="ed-media-panel">
+            <header class="ed-media-head">
+                <div>
+                    <h2 id="edMediaTitle" data-ed-media-title>Imagen</h2>
+                    <p class="ed-media-where" data-ed-media-where></p>
+                </div>
+                <button type="button" class="ed-media-close" data-ed-media-close
+                        aria-label="Cerrar">×</button>
+            </header>
+
+            <div class="ed-media-body" data-ed-media-body></div>
+
+            <footer class="ed-media-foot">
+                <p class="ed-media-hint">
+                    Nada se ve en la web hasta que publiques.
+                </p>
+                <button type="button" class="ed-btn ed-btn-primary" data-ed-media-done>Listo</button>
             </footer>
         </div>
     </div>
