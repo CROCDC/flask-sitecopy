@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "flask-sitecopy"
-version = "0.5.0"
+version = "0.6.0"
 description = "Edit every string on a Flask site from an admin panel, without a deploy."
 readme = "README.md"
 requires-python = ">=3.10"
