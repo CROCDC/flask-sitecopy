@@ -270,9 +270,9 @@ is always offered as *“Original”*). History rides the same `db` as the copy;
 
 ## Text sizes
 
-Off by default. Turn them on and every text field grows a **Tamaño** control — in the
-visual editor's panel and in the section forms — that changes how big that string renders,
-with no deploy and no CSS from you:
+Off by default. Turn them on and every text grows a size control — **A− / A+ on the block
+itself** in the visual editor, and a **Tamaño** dropdown in the panel and in the section
+forms — that changes how big that string renders, with no deploy and no CSS from you:
 
 ```python
 SiteCopy(app, registry=REGISTRY, db=db, text_sizes=True)
@@ -376,18 +376,30 @@ Tokens are interpolated **before** sanitizing, so a token's value is treated as 
 
 ## The visual editor
 
-`/admin/content/` is the front door: the live site in a frame, edited in place.
+`/admin/content/` is the front door: the live site in a frame, edited in place. **The
+page is the editor** — every block that can be changed carries its own controls, on the
+canvas, without being asked for. The list of texts is the way out for copy you cannot
+reach by clicking, not the place the work happens.
 
 - **Click any text and type over it.** Nothing is live until you publish.
+- **Every editable block wears its controls.** A small bar stands beside it with what
+  applies: **A− / A+** to resize the text (when the site turns [text sizes](#text-sizes)
+  on) and **✎ Cambiar imagen** on a picture or a clip. No hover, no right-click, no
+  hunting in a list — a control that has to be discovered is one most people never find,
+  and a phone cannot hover at all. Each bar takes the first free gap around its block, so
+  standing chrome never parks over someone else's words; **Controles** in the toolbar
+  takes them all off when you want to see the page the way a customer will.
 - **Click a picture and change it there.** Its own controls open over the canvas —
   preview, upload, the version gallery — plus the alt text that lives on the same
-  element. No trip to the panel.
+  element.
 - **Copy with no visible text** — the `<title>`, the meta description, aria-labels — is
-  in the side panel: there is nowhere on the page to type it.
+  in the side panel: there is nowhere on the page to type it. When it belongs to an
+  element you can see (a menu's screen-reader name), that element gets a button of its
+  own beside it.
 - **Unsaved edits travel with you** across pages, and stay listed in the panel.
-- **How big a text renders** is a dropdown beside it, when the site turns
-  [text sizes](#text-sizes) on — in the panel, and in the popup that edits a whole page
-  body. The canvas changes as you pick.
+- **How big a text renders** is also a dropdown in the panel and in the popup that edits
+  a whole page body — the same single value, whichever way you reach it. The canvas
+  changes as you pick.
 - **Device widths** and **share/search cards** (Google, WhatsApp, Twitter/X) are built
   from the previewed document's own `<title>` and `meta` tags, so there is no second
   implementation of your metadata logic to drift out of sync.

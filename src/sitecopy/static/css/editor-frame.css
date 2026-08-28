@@ -151,6 +151,19 @@ ct-t:empty:not([data-ct-editing])::before {
 [data-ct-keys]:focus::after,
 [data-ct-keys]:focus-within::after { opacity: 0.95; }
 
+/* An element whose copy lives only in an attribute has nothing on the page that LOOKS
+   editable, and the badge above needs a hover to come up — so on a phone, and for anyone
+   who never thought to hover, it simply did not exist. A standing dashed frame says
+   "there is copy in here" on every device, without parking a 32px button over the
+   content (which is what covered the cart count when the badge was made permanent). */
+[data-ct-keys]:not(img):not(input):not(video) {
+    outline: 2px dashed rgba(154, 87, 48, 0.7);
+    outline-offset: -2px;
+}
+head [data-ct-keys], meta[data-ct-keys], link[data-ct-keys], title[data-ct-keys] {
+    outline: none;
+}
+
 /* An <img> or <input> is a replaced element: it generates no ::after box at all, so
    the badge simply never existed on exactly the case it was built for (image alt
    text). An outline works on replaced elements and, unlike a badge parked in the
@@ -177,10 +190,6 @@ img[data-ct-keys][data-ct-dirty] {
    parked over the content — at 32px it covered the cart count and the wordmark's
    last letter. */
 @media (hover: none) {
-    [data-ct-keys]:not(img):not(input):not(video) {
-        outline: 2px dashed rgba(154, 87, 48, 0.7);
-        outline-offset: -2px;
-    }
     /* The affordance had to be standing, not on demand: with no pointer and no text
        cursor, nothing on a phone said which of these words could be touched — and the
        one sentence that explained it was hidden at this width too. */
@@ -192,22 +201,101 @@ img[data-ct-keys][data-ct-dirty] {
 /* Inline/void elements can't host the badge; their keys are still in the panel. */
 head [data-ct-keys]::after, meta[data-ct-keys]::after, link[data-ct-keys]::after { content: none; }
 
-/* ---------- "change this media" chip ---------- */
-/* A floating button over an image/video on the canvas: the visible "you can swap or
-   upload one here" affordance a replaced element can't carry as a ::after badge. */
-.ct-media-chip {
-    position: absolute;
+/* ---------- the controls that stand on the canvas ---------- */
+/* One small bar per editable block, always there. The picture's button used to need a
+   hover and the size lived only in the side list, so on a phone — and for anyone who
+   never thought to hover — the canvas was a preview and the list was the editor. */
+.ct-bars {
+    position: fixed;
+    inset: 0;
     z-index: 2147483500;
-    font: 600 13px/1 system-ui, sans-serif;
+    /* The layer covers the viewport; only the bars themselves take a click, so nothing
+       here can steal one from the site underneath. */
+    pointer-events: none;
+}
+.ct-bar {
+    position: fixed;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 999px;
+    /* Near-black rather than the cognac: this is standing text over whatever the site
+       put behind it, so it has to clear 4.5:1 on a photo, a tint or a white band. */
+    background: #241c17;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.15);
+    pointer-events: auto;
+    font: 600 12px/1 system-ui, sans-serif;
+    letter-spacing: 0;
+    text-transform: none;
     color: #fff;
-    background: #b56a3a;
+    white-space: nowrap;
+}
+/* An explicit `display` in a class rule beats the UA sheet's `[hidden] { display: none }`,
+   so hiding a bar did nothing at all: the control for a block scrolled off the top simply
+   froze where it last was, floating over whatever had scrolled into its place. */
+.ct-bar[hidden] { display: none; }
+.ct-bar:focus-within { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4), 0 0 0 2px #fff; }
+.ct-size-of { padding: 0 2px 0 6px; font-size: 13px; color: #f3e7dd; }
+/* On demand, not standing: the BUTTONS are what has to be there without being asked
+   for, and a word of chrome over every block is what turns a page into a cockpit. The
+   size is in each button's own name, so nothing is lost with the pixels. */
+.ct-size-now { display: none; }
+.ct-bar-size:hover .ct-size-now,
+.ct-bar-size:focus-within .ct-size-now {
+    display: inline;
+    padding: 0 6px;
+    color: #fff;
+    /* The longest step name is "Más grande"; a fixed floor stops the bar resizing (and
+       so jumping sideways) on every step. */
+    min-width: 62px;
+    text-align: center;
+}
+.ct-size-btn, .ct-media-chip, .ct-keys-chip {
     border: none;
     border-radius: 999px;
-    padding: 7px 12px;
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
     cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    font: 600 12px/1 system-ui, sans-serif;
 }
-.ct-media-chip:hover, .ct-media-chip:focus-visible { background: #9a5730; outline: none; }
+.ct-size-btn {
+    min-width: 28px;
+    height: 28px;
+    font-size: 17px;
+}
+.ct-media-chip, .ct-keys-chip { min-height: 28px; padding: 0 12px; }
+.ct-size-btn:hover, .ct-media-chip:hover, .ct-keys-chip:hover { background: rgba(255, 255, 255, 0.3); }
+.ct-size-btn:focus-visible, .ct-media-chip:focus-visible, .ct-keys-chip:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 1px;
+}
+/* aria-disabled, not disabled: pressing the last step must not yank focus off the
+   button under the finger. It still answers — by saying it is already at the end. */
+.ct-size-btn[aria-disabled="true"] { opacity: 0.45; cursor: default; }
+
+/* No pointer: the same controls, at the size a thumb can actually hit. */
+@media (hover: none) {
+    .ct-size-btn { min-width: 44px; height: 44px; }
+    .ct-media-chip, .ct-keys-chip { min-height: 44px; }
+    /* Every pixel counts once the targets are thumb-sized: on a 390px screen the page
+       runs out of room long before it runs out of blocks, and the "A" is decoration. */
+    .ct-size-of { display: none; }
+}
+
+/* Announcements for what a control just did — heard, never seen. */
+.ct-live {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
 
 /* ---------- hint bubble ---------- */
 .ct-tip {
