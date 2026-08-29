@@ -182,3 +182,23 @@ def editor(page, base_url):
     ed.login()
     ed.open()
     return ed
+
+
+@pytest.fixture
+def phone_editor(browser, base_url):
+    """The editor on a real touch device, not just a narrow window.
+
+    `set_viewport_size` makes the page narrow but leaves the browser reporting a mouse,
+    so every `(hover: none)` rule — which is where the touch-sized targets live — stays
+    switched off. Only a context with `has_touch` answers that media query.
+    """
+    context = browser.new_context(
+        viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True
+    )
+    ed = Editor(context.new_page(), base_url)
+    try:
+        ed.login()
+        ed.open()
+        yield ed
+    finally:
+        context.close()

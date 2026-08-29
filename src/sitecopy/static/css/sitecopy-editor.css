@@ -36,6 +36,8 @@
 }
 .ed-device:hover { border-color: var(--adm-line); }
 .ed-device.is-current { background: var(--adm-ink); color: #fff; }
+/* Not a width, so it does not sit inside the widths' own group visually. */
+.ed-chrome { margin-left: 0.4rem; }
 
 .ed-actions { gap: 0.5rem; }
 .ed-btn {
@@ -50,6 +52,21 @@
 .ed-btn-primary:hover:not(:disabled) { background: #874c29; }
 .ed-btn-ghost { background: transparent; border-color: var(--adm-line); color: var(--adm-ink); }
 .ed-btn-ghost:hover:not(:disabled) { border-color: var(--adm-ink); }
+/* The way OUT of the canvas, not a way to work in it: editing happens on the page,
+   block by block, and the list is for the copy you cannot reach by clicking. Quiet, not
+   faint — it keeps full ink (and so its contrast), it just stops looking like an action
+   you are meant to take. */
+.ed-btn-quiet {
+    background: transparent;
+    border-color: transparent;
+    color: var(--adm-ink);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-color: var(--adm-line);
+    padding-left: 0.6rem;
+    padding-right: 0.6rem;
+}
+.ed-btn-quiet:hover:not(:disabled) { text-decoration-color: var(--adm-ink); }
 .ed-btn:disabled { opacity: 0.45; cursor: default; }
 .ed-badge {
     display: inline-flex; align-items: center; justify-content: center;

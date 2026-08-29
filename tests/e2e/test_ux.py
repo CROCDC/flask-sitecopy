@@ -404,3 +404,235 @@ def test_the_size_control_in_the_popup_is_big_enough_and_named(editor, base_url)
         "el => (el.labels && el.labels.length ? el.labels[0].textContent : '').trim()"
     )
     assert name == "Tamaño"
+
+
+# --- the controls that stand on the canvas ---------------------------------------
+#
+# The size used to live only in the side list and the picture's button only appeared on
+# hover, so on a phone — and for anyone who never thought to hover — the canvas was a
+# preview and the list was the editor. These pin the opposite: the controls are ON the
+# blocks, without being asked for.
+
+
+def bar(editor, key: str):
+    return editor.canvas.locator(f'[data-ct-bar][data-ct-for="{key}"]')
+
+
+def step_up(editor, key: str = TITLE):
+    bar(editor, key).locator("button", has_text="+").click()
+    editor.page.wait_for_timeout(350)
+
+
+def test_the_size_control_is_on_the_block_without_being_asked_for(editor):
+    """No hover, no click, no panel: the buttons are simply there when the page loads."""
+    editor.page.wait_for_timeout(400)
+    control = bar(editor, TITLE)
+    assert control.count() == 1
+    assert control.is_visible()
+    box = control.bounding_box()
+    assert box["width"] > 0 and box["height"] > 0
+
+
+def test_the_picture_button_is_there_without_hovering(editor):
+    """It used to take a hover — a gesture a phone does not have."""
+    editor.page.wait_for_timeout(400)
+    chip = editor.canvas.locator(".ct-media-chip")
+    assert chip.count() == 1 and chip.is_visible()
+    assert "Cambiar" in chip.inner_text()
+
+
+def test_a_text_edited_inline_can_be_resized_where_it_lives(editor):
+    """The gap this closes. Only a `rich` body opens a popup; everything else is edited
+    in place on the canvas, so before this its size existed only in the side list."""
+    before = font_px(editor.ct(TITLE))
+    step_up(editor)
+    after = font_px(editor.ct(TITLE))
+    assert after > before * 1.05
+
+
+def test_stepping_on_the_canvas_counts_as_one_pending_change(editor):
+    step_up(editor)
+    assert editor.page.locator("[data-ed-pending]").inner_text() == "1"
+    assert not editor.page.locator("[data-ed-save]").is_disabled()
+
+
+def test_the_canvas_and_the_list_never_disagree_about_the_size(editor):
+    """One value, two ways in. A step taken on the block has to be the same change the
+    list shows — not a second, competing one."""
+    step_up(editor)
+    open_panel(editor)
+    assert size_select(editor).input_value() == "lg"
+
+
+def test_the_control_says_which_size_the_block_is_at(editor):
+    """The readout costs a word of chrome over every block, so it waits for a hover or a
+    keyboard focus. What is standing there says it too, in the buttons' own names — which
+    is also the only version a screen reader ever gets."""
+    control = bar(editor, TITLE)
+    up = control.locator("button", has_text="+")
+    assert "(ahora Normal)" in up.get_attribute("aria-label")
+
+    readout = control.locator(".ct-size-now")
+    assert readout.is_hidden()
+    control.hover()
+    editor.page.wait_for_timeout(200)
+    assert readout.inner_text() == "Normal"
+
+    step_up(editor)
+    assert "(ahora Grande)" in up.get_attribute("aria-label")
+
+
+def test_the_step_buttons_keep_the_focus_they_were_given(editor):
+    """At the end of the scale the button is marked aria-disabled, never `disabled`:
+    a real disabled attribute drops the keyboard to <body> mid-press."""
+    up = bar(editor, TITLE).locator("button", has_text="+")
+    for _ in range(3):  # 'base' to the top of the scale: lg, xl, 2xl
+        up.click()
+        editor.page.wait_for_timeout(250)
+    assert up.get_attribute("aria-disabled") == "true"
+    # The real attribute, not Playwright's is_disabled(), which counts aria-disabled too:
+    # what matters here is that the browser never took the button out of the tab order.
+    assert up.evaluate("el => el.disabled") is False
+    focused = editor.canvas.locator("body").evaluate(
+        "el => document.activeElement && document.activeElement.className"
+    )
+    assert "ct-size-btn" in focused
+
+
+def test_the_control_can_be_operated_with_the_keyboard_alone(editor):
+    before = font_px(editor.ct(TITLE))
+    up = bar(editor, TITLE).locator("button", has_text="+")
+    up.focus()
+    editor.page.keyboard.press("Enter")
+    editor.page.wait_for_timeout(350)
+    assert font_px(editor.ct(TITLE)) > before
+
+
+def test_no_control_is_parked_over_a_text(editor):
+    """The whole promise of standing chrome: it can be there all the time only if it is
+    never in the way. Each bar takes the first free gap around its block — above it, then
+    either side — and only sits on the block itself when the page leaves it nowhere else.
+
+    Measured against every editable string on the page, not just its own: the first cut
+    put each control neatly above its block and squarely over the last line of the one
+    before it."""
+    editor.page.wait_for_timeout(600)
+    rects = editor.canvas.locator("body").evaluate(
+        """() => {
+            const box = (el) => {
+                const r = el.getBoundingClientRect();
+                return {left: r.left, top: r.top, right: r.right, bottom: r.bottom,
+                        what: el.getAttribute('data-ct-for') || el.getAttribute('data-k')};
+            };
+            // The LINES, not the block: a wrapped heading's bounding box is the union
+            // of its lines, so the empty half of a two-word last line would read as
+            // covered text and this would fail on a control sitting in clear space.
+            const linesOf = (el) => [...el.getClientRects()].map((r) => ({
+                left: r.left, top: r.top, right: r.right, bottom: r.bottom,
+                what: el.getAttribute('data-k'),
+            }));
+            return {
+                bars: [...document.querySelectorAll('.ct-bar:not([hidden])')].map(box),
+                texts: [...document.querySelectorAll('ct-t')].flatMap(linesOf),
+            };
+        }"""
+    )
+    assert rects["bars"] and rects["texts"]
+    for control in rects["bars"]:
+        for text in rects["texts"]:
+            if text["what"] == control["what"]:
+                continue  # its own block: a bar may sit on the block it labels
+            hit = (
+                control["left"] < text["right"] - 1
+                and control["right"] > text["left"] + 1
+                and control["top"] < text["bottom"] - 1
+                and control["bottom"] > text["top"] + 1
+            )
+            assert not hit, f"{control['what']} covers {text['what']}"
+
+
+def test_the_controls_follow_their_block_when_the_page_scrolls(editor):
+    """A control pinned to a place instead of to its block ends up over someone else's
+    text. This is the bug the `[hidden]` rule was hiding: `display: inline-flex` in a
+    class beats the UA sheet, so a bar that was told to hide simply froze in place."""
+    editor.page.wait_for_timeout(400)
+    before = bar(editor, TITLE).bounding_box()["y"]
+    editor.canvas.locator("body").evaluate("() => window.scrollBy(0, 40)")
+    editor.page.wait_for_timeout(400)
+    after = bar(editor, TITLE).bounding_box()["y"]
+    assert 30 < before - after < 50
+
+
+def test_a_control_goes_away_with_the_block_it_belongs_to(editor):
+    """Scrolled past, it must not stay parked over whatever took its place."""
+    editor.page.wait_for_timeout(400)
+    assert bar(editor, TITLE).is_visible()
+    editor.canvas.locator("body").evaluate("() => window.scrollBy(0, 900)")
+    editor.page.wait_for_timeout(400)
+    assert not bar(editor, TITLE).is_visible()
+
+
+def test_the_step_buttons_fit_a_thumb_on_a_real_phone(phone_editor):
+    """`(hover: none)` is what a touch device actually reports, and it is where the
+    44px targets live — a merely narrow window keeps reporting a mouse."""
+    phone_editor.page.wait_for_timeout(600)
+    for button in phone_editor.canvas.locator(".ct-bar button").all():
+        if not button.is_visible():
+            continue
+        box = button.bounding_box()
+        assert box["height"] >= MIN_TOUCH, button.inner_text()
+
+
+def test_stepping_a_size_on_the_canvas_logs_no_console_errors(editor):
+    step_up(editor)
+    step_up(editor)
+    assert editor.console_errors == []
+
+
+def test_a_menu_is_not_turned_into_one_big_button(editor):
+    """Its copy lives in an `aria-label`, but it is a container full of links: promoting
+    it to `role="button"` nested every link inside a control, which is announced as one
+    thing. It keeps its own semantics and gets a control beside it instead."""
+    nav = editor.canvas.locator("nav[data-ct-keys]")
+    assert nav.count() == 1
+    assert nav.get_attribute("role") is None
+    assert nav.get_attribute("tabindex") is None
+
+    control = editor.canvas.locator(".ct-bar-keys button")
+    assert control.count() == 1 and control.is_visible()
+    control.click()
+    editor.page.wait_for_timeout(400)
+    assert editor.page.locator("[data-ed-panel]").is_visible()
+    assert editor.field_input("global.nav.label").is_visible()
+
+
+def test_the_controls_can_be_taken_off_to_see_the_page_clean(editor):
+    """They stand on every block, which is the point — but the page you are about to
+    publish is also worth seeing the way a customer will."""
+    editor.page.wait_for_timeout(400)
+    assert bar(editor, TITLE).is_visible()
+
+    toggle = editor.page.locator("[data-ed-chrome]")
+    toggle.click()
+    editor.page.wait_for_timeout(400)
+    assert not bar(editor, TITLE).is_visible()
+    assert toggle.get_attribute("aria-pressed") == "false"
+
+    # And the text underneath is still editable: this hides the chrome, not the editor.
+    editor.type_over(TITLE, "Sin botones")
+    assert editor.page.locator("[data-ed-pending]").inner_text() == "1"
+
+    toggle.click()
+    editor.page.wait_for_timeout(400)
+    assert bar(editor, TITLE).is_visible()
+
+
+def test_the_controls_stay_off_across_a_page_change(editor):
+    """The canvas is a new document on every navigation, so the setting has to be told
+    to it again — otherwise it silently came back on at the first click on a link."""
+    editor.page.locator("[data-ed-chrome]").click()
+    editor.page.wait_for_timeout(300)
+    editor.page.select_option("[data-ed-page]", "/nosotros")
+    editor.page.wait_for_timeout(1500)
+    assert editor.canvas.locator(".ct-bar").first.is_hidden()
+    assert editor.page.locator("[data-ed-chrome]").get_attribute("aria-pressed") == "false"

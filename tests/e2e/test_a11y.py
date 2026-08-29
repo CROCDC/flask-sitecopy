@@ -147,3 +147,46 @@ def test_the_page_body_editor_stays_accessible_with_its_size_control(editor):
     assert editor.page.locator("[data-ed-sheet]").is_visible()
     v = _blocking(editor.page)
     assert not v, "a11y violations in the page-body editor:\n" + _fmt(v)
+
+
+# --- the controls that stand on the canvas ---------------------------------------
+
+
+def test_the_canvas_with_its_standing_controls_is_accessible(editor, base_url):
+    """The bars are library chrome rendered INSIDE someone else's page, and they are now
+    always on screen — so for the first time axe can see them. Contrast over whatever the
+    site put behind them, and a name on every button, are on us.
+
+    Scanned as a page of its own rather than through the frame: axe runs against a
+    document, and the canvas is the same document with the same session behind it.
+    """
+    canvas = editor.page.context.new_page()
+    try:
+        canvas.goto(f"{base_url}/?edit=1", wait_until="networkidle")
+        canvas.wait_for_timeout(500)
+        assert canvas.locator(".ct-bar").count() > 0, "no controls to scan"
+        v = [x for x in _axe.run(canvas).response["violations"] if x.get("impact") in BLOCKING]
+    finally:
+        canvas.close()
+    assert not v, "a11y violations on the canvas:\n" + _fmt(v)
+
+
+def test_every_step_button_says_which_text_it_resizes(editor):
+    """"+" and "−" name nothing on their own, and a page carries a dozen of them."""
+    editor.page.wait_for_timeout(400)
+    names = editor.canvas.locator(".ct-bar-size button").evaluate_all(
+        "els => els.map(el => el.getAttribute('aria-label') || '')"
+    )
+    assert names
+    for name in names:
+        assert name.startswith("Achicar el texto: ") or name.startswith("Agrandar el texto: ")
+        assert len(name.split(": ", 1)[1]) > 1
+
+
+def test_stepping_a_size_is_announced_out_loud(editor):
+    """The canvas shows it; a screen reader has nothing to look at."""
+    editor.canvas.locator('[data-ct-for="home.hero.title"] button', has_text="+").click()
+    editor.page.wait_for_timeout(400)
+    live = editor.canvas.locator("#ctLive")
+    assert live.get_attribute("aria-live") == "polite"
+    assert "Grande" in live.inner_text()
