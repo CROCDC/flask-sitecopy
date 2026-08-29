@@ -4,7 +4,7 @@ All notable changes to **flask-sitecopy** are documented here. The format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
-## [0.6.0] — 2026-08-28
+## [0.7.0] — 2026-08-29
 
 ### Changed
 
@@ -221,6 +221,7 @@ Earlier release — see the [git history](https://github.com/CROCDC/flask-siteco
 
 First tagged release.
 
+[0.7.0]: https://github.com/CROCDC/flask-sitecopy/releases/tag/v0.7.0
 [0.6.0]: https://github.com/CROCDC/flask-sitecopy/releases/tag/v0.6.0
 [0.5.0]: https://github.com/CROCDC/flask-sitecopy/releases/tag/v0.5.0
 [0.4.0]: https://github.com/CROCDC/flask-sitecopy/releases/tag/v0.4.0
