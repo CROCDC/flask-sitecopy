@@ -953,6 +953,39 @@
     }
   }
 
+  /* ---------------- the block controls on the canvas ---------------- */
+
+  const chromeBtn = root.querySelector("[data-ed-chrome]");
+  const CHROME_KEY = "sitecopy:chrome";
+  let chromeOn = true;
+  try {
+    chromeOn = window.localStorage.getItem(CHROME_KEY) !== "off";
+  } catch (_) {
+    // A browser with storage blocked still gets the default, which is "on".
+  }
+
+  function syncChrome() {
+    if (!chromeBtn) return;
+    chromeBtn.setAttribute("aria-pressed", chromeOn ? "true" : "false");
+    chromeBtn.classList.toggle("is-current", chromeOn);
+    tellFrame({ type: "chrome", on: chromeOn });
+  }
+
+  if (chromeBtn) {
+    chromeBtn.addEventListener("click", () => {
+      chromeOn = !chromeOn;
+      try {
+        window.localStorage.setItem(CHROME_KEY, chromeOn ? "on" : "off");
+      } catch (_) {}
+      syncChrome();
+      setStatus(
+        chromeOn
+          ? "Botones de cada bloque a la vista."
+          : "Botones ocultos. La página se ve como la ven tus clientes; tocar un texto igual lo edita."
+      );
+    });
+  }
+
   function reloadCanvas() {
     try {
       iframe.contentWindow.location.reload();
@@ -1026,10 +1059,21 @@
       });
       renderFields();
       syncButtons();
+      syncChrome();
       const current = root.querySelector("[data-ed-device].is-current");
       if (current) fitDevice(current);
     } else if (data.type === "change") {
       stageChange(data.key, data.value);
+    } else if (data.type === "askChrome") {
+      tellFrame({ type: "chrome", on: chromeOn });
+    } else if (data.type === "size") {
+      // A step taken on the block itself. The scale is closed and comes from the server,
+      // so a token that is not in it is dropped here rather than staged, counted and
+      // then refused on save.
+      const known = (manifest.sizes || []).some((step) => step.token === data.token);
+      if (known && typeof data.key === "string" && fieldFor(data.key)) {
+        stageSize(data.key, data.token);
+      }
     } else if (data.type === "openMedia") {
       openMediaDialog(data.key, data.keys);
     } else if (data.type === "openRich") {

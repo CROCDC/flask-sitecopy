@@ -424,8 +424,10 @@ def test_text_that_only_lives_in_an_attribute_still_opens_in_the_panel(editor):
     """A picture has controls of its own; a menu's screen-reader name does not — there is
     nowhere on the page to type it, so that one still belongs in the panel. Driven by
     keyboard because this nav is wall-to-wall links: a click on one is deliberately left
-    to the site, or the menu would be dead in the editor."""
-    editor.canvas.locator("nav[data-ct-keys]").first.focus()
+    to the site, or the menu would be dead in the editor. The nav itself is NOT the
+    control — a container full of links must not be announced as one button — so the
+    keyboard reaches its copy through the control standing beside it."""
+    editor.canvas.locator(".ct-bar-keys button").first.focus()
     editor.page.keyboard.press("Enter")
     editor.page.wait_for_timeout(600)
     assert editor.page.locator("[data-ed-media]").is_hidden()

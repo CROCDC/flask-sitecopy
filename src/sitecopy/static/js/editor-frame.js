@@ -88,6 +88,13 @@
         node.removeAttribute("data-s");
       }
     });
+    // The block's own control has to agree with the page: the size can also change from
+    // the side list, and a readout saying "Normal" over a heading that is clearly not
+    // is worse than no readout at all. A step also reflows the page under every bar.
+    SIZE_NOW[key] = token || "base";
+    const sync = sizeBars.get(key);
+    if (sync) sync();
+    scheduleBars();
   }
 
   function parseTarget(node) {
@@ -201,6 +208,8 @@
       else node.removeAttribute("data-ct-dirty");
     });
     updateMedia(key);
+    // Longer copy pushes everything below it down; the controls travel with their block.
+    scheduleBars();
   }
 
   /** An image/video field lands in a `src` attribute, so it has no <ct-t> node to
@@ -570,6 +579,9 @@
     node.addEventListener("paste", onPaste);
 
     post({ type: "focus", key: target.key });
+    // The raw value can be longer than what was rendered (a {token} spelled out), and
+    // the node is now pre-wrap: the block just changed shape under its own control.
+    scheduleBars();
   }
 
   function stopEditing(discard) {
@@ -602,9 +614,9 @@
   document.addEventListener(
     "click",
     (event) => {
-      // The media chip is our own overlay button; let its own handler (openKeys) run
-      // without the "this text is not editable" tip firing on it first.
-      if (event.target.closest && event.target.closest(".ct-media-chip")) return;
+      // The block bar is our own chrome; let its buttons run without the "this text
+      // is not editable" tip firing on them first.
+      if (event.target.closest && event.target.closest("[data-ct-bar]")) return;
       const node = event.target.closest ? event.target.closest("ct-t") : null;
       if (node) {
         clickPoint = { x: event.clientX, y: event.clientY };
@@ -770,6 +782,8 @@
       CURRENT[data.key] = data.value;
       refresh(data.key);
       refreshDependents(data.key);
+    } else if (data.type === "chrome") {
+      showChrome(data.on !== false);
     } else if (data.type === "size") {
       applySize(data.key, data.token);
     } else if (data.type === "highlight") {
@@ -830,26 +844,77 @@
     document.querySelectorAll("[data-ct-keys]").forEach((node) => {
       if (node.matches(INTERACTIVE) || node.closest("head")) return;
       if (node.hasAttribute("tabindex")) return;
+      // A container that already holds links or buttons must NOT become a button
+      // itself: nested interactive controls are announced as one thing, and the site's
+      // own <nav aria-label> — a whole menu — was being read out as a single button.
+      // It gets a control of its own on the canvas instead, which is reachable by
+      // keyboard and by touch without touching the site's semantics at all.
+      if (node.querySelector(INTERACTIVE)) {
+        node.setAttribute("data-ct-nested", "");
+        return;
+      }
       node.setAttribute("tabindex", "0");
       node.setAttribute("role", "button");
       node.setAttribute("aria-label", "Editar los textos de este elemento");
     });
-    setupMediaChips();
+    setupBars();
   }
 
-  /* ---------------- "change this picture/video" chip ---------------- */
+  /* ---------------- the controls that stand on the canvas ---------------- */
   //
-  // A replaced element (img/video) can't host a ::after badge, so a media field on the
-  // canvas gets a floating button on hover/focus that opens its panel — the "icon on the
-  // image" that makes it obvious you can swap or upload one right there.
+  // Editing here is BLOCK editing: every block that can be changed carries its own
+  // controls, in place, standing. They used to appear on hover (the picture) or to live
+  // only in the side list (the size), which quietly made the list the real editor and
+  // the canvas a preview — exactly backwards. A control you have to discover is a
+  // control most people never find.
 
-  let mediaChip = null;
-  let mediaChipFor = null;
-  // Everything that element carries — the picture AND its alt text — so the dialog can
-  // offer all of it. They live on the same element; splitting them across two screens is
-  // what sent people hunting.
-  let mediaChipKeys = [];
-  let mediaChipHideTimer = null;
+  let barLayer = null;
+  const bars = [];             // { el, anchor }
+  const sizeBars = new Map();  // key -> sync()
+
+  // The scale this install offers, in order. Empty where the host never turned sizes on,
+  // and then no size control is ever drawn.
+  const SIZE_STEPS = (MANIFEST.sizes || []).map((step) => step.token);
+  const SIZE_LABELS = {};
+  (MANIFEST.sizes || []).forEach((step) => { SIZE_LABELS[step.token] = step.label; });
+  // What each field is showing RIGHT NOW, so a step is taken from the size on screen
+  // and not from the one the page happened to load with.
+  const SIZE_NOW = {};
+  Object.keys(FIELDS).forEach((key) => { SIZE_NOW[key] = FIELDS[key].size || "base"; });
+
+  let liveRegion = null;
+
+  /** Say out loud what a button just did. The canvas shows it (the text really does get
+   *  bigger); a screen reader has nothing to look at. */
+  function announce(text) {
+    if (!liveRegion) {
+      liveRegion = document.createElement("p");
+      liveRegion.id = "ctLive";
+      liveRegion.className = "ct-live";
+      liveRegion.setAttribute("role", "status");
+      liveRegion.setAttribute("aria-live", "polite");
+      document.body.appendChild(liveRegion);
+    }
+    liveRegion.textContent = text;
+  }
+
+  function ensureBarLayer() {
+    if (barLayer) return barLayer;
+    barLayer = document.createElement("div");
+    barLayer.className = "ct-bars";
+    document.body.appendChild(barLayer);
+    return barLayer;
+  }
+
+  function makeBar(anchor, extraClass, key) {
+    const el = document.createElement("div");
+    el.className = "ct-bar" + (extraClass ? " " + extraClass : "");
+    el.setAttribute("data-ct-bar", "");
+    if (key) el.setAttribute("data-ct-for", key);
+    ensureBarLayer().appendChild(el);
+    bars.push({ el: el, anchor: anchor });
+    return el;
+  }
 
   function mediaKeyOf(el) {
     const raw = el.getAttribute("data-ct-keys");
@@ -862,57 +927,310 @@
     return null;
   }
 
-  function ensureMediaChip() {
-    if (mediaChip) return mediaChip;
-    mediaChip = document.createElement("button");
-    mediaChip.type = "button";
-    mediaChip.className = "ct-media-chip";
-    mediaChip.hidden = true;
-    mediaChip.addEventListener("click", (event) => {
+  /** A replaced element can host neither a <ct-t> nor a ::after badge, so the picture's
+   *  own button lives in the bar. Everything that element carries — the picture AND its
+   *  alt text — travels with it: they are one thing to the person looking at it. */
+  function addMediaBar(el, key) {
+    const bar = makeBar(el, "ct-bar-media", key);
+    const keys = (el.getAttribute("data-ct-keys") || "").split(/\s+/).filter(Boolean);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "ct-media-chip";
+    btn.textContent =
+      (FIELDS[key] || {}).type === "video" ? "✎ Cambiar video" : "✎ Cambiar imagen";
+    btn.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      if (mediaChipFor) post({ type: "openMedia", key: mediaChipFor, keys: mediaChipKeys });
+      post({ type: "openMedia", key: key, keys: keys });
     });
-    mediaChip.addEventListener("mouseenter", () => {
-      if (mediaChipHideTimer) window.clearTimeout(mediaChipHideTimer);
+    bar.appendChild(btn);
+  }
+
+  /** Two steps and a readout, rather than a dropdown: the scale is closed and short, the
+   *  answer is on the page right behind the button, and a step is one tap on a phone. */
+  function addSizeBar(node, key) {
+    const field = FIELDS[key] || {};
+    const name = field.label || key;
+    const bar = makeBar(node, "ct-bar-size", key);
+
+    const glyph = document.createElement("span");
+    glyph.className = "ct-size-of";
+    glyph.setAttribute("aria-hidden", "true");  // "A" is decoration; the buttons say it
+    glyph.textContent = "A";
+    bar.appendChild(glyph);
+
+    const down = document.createElement("button");
+    down.type = "button";
+    down.className = "ct-size-btn";
+    down.textContent = "\u2212";
+    bar.appendChild(down);
+
+    const read = document.createElement("span");
+    read.className = "ct-size-now";
+    bar.appendChild(read);
+
+    const up = document.createElement("button");
+    up.type = "button";
+    up.className = "ct-size-btn";
+    up.textContent = "+";
+    bar.appendChild(up);
+
+    function at() {
+      const index = SIZE_STEPS.indexOf(SIZE_NOW[key] || "base");
+      return index === -1 ? SIZE_STEPS.indexOf("base") : index;
+    }
+
+    function sync() {
+      const index = at();
+      const now = SIZE_LABELS[SIZE_STEPS[index]] || "";
+      read.textContent = now;
+      // The readout is shown on hover and on focus only — a standing control has to be
+      // as small as it can be, and a word of chrome per block is what turns a page into
+      // a cockpit. Nobody loses the information: it is in the buttons' own names.
+      const where = ' el texto: ' + name + (now ? " (ahora " + now + ")" : "");
+      down.setAttribute("aria-label", "Achicar" + where);
+      up.setAttribute("aria-label", "Agrandar" + where);
+      // aria-disabled, not `disabled`: a real disabled attribute takes focus away from
+      // the very button that was just pressed, dropping the keyboard back to <body>.
+      down.setAttribute("aria-disabled", index <= 0 ? "true" : "false");
+      up.setAttribute("aria-disabled", index >= SIZE_STEPS.length - 1 ? "true" : "false");
+    }
+
+    function step(delta) {
+      const next = at() + delta;
+      if (next < 0 || next >= SIZE_STEPS.length) {
+        announce(
+          delta < 0 ? "Ya está en el tamaño más chico." : "Ya está en el tamaño más grande."
+        );
+        return;
+      }
+      const token = SIZE_STEPS[next];
+      // Apply it here first: the point of stepping on the canvas is judging the size
+      // against the real page, and waiting for the shell to echo it back would blink.
+      applySize(key, token);
+      post({ type: "size", key: key, token: token });
+      announce(name + ": " + (SIZE_LABELS[token] || token));
+    }
+
+    down.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      step(-1);
     });
-    mediaChip.addEventListener("mouseleave", hideMediaChip);
-    document.body.appendChild(mediaChip);
-    return mediaChip;
+    up.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      step(1);
+    });
+
+    sizeBars.set(key, sync);
+    sync();
   }
 
-  function showMediaChip(el, key) {
-    const chip = ensureMediaChip();
-    mediaChipFor = key;
-    mediaChipKeys = (el.getAttribute("data-ct-keys") || "").split(/\s+/).filter(Boolean);
-    chip.textContent =
-      (FIELDS[key] || {}).type === "video" ? "✎ Cambiar video" : "✎ Cambiar imagen";
-    const box = el.getBoundingClientRect();
-    chip.style.top = box.top + window.scrollY + 8 + "px";
-    chip.style.left = box.left + window.scrollX + 8 + "px";
-    chip.hidden = false;
-    if (mediaChipHideTimer) window.clearTimeout(mediaChipHideTimer);
+  /** Copy that reaches the page only through an attribute of an element that is itself
+   *  full of links (a menu's aria-label). It cannot be clicked without swallowing the
+   *  site's own controls, so its own button lives beside it. */
+  function addKeysBar(el, keys) {
+    const bar = makeBar(el, "ct-bar-keys", keys[0]);
+    const name = (FIELDS[keys[0]] || {}).label || "este elemento";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "ct-keys-chip";
+    btn.textContent = "✎ " + name;
+    btn.setAttribute("aria-label", "Editar los textos de este elemento: " + name);
+    btn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      post({ type: "openKeys", keys: keys });
+    });
+    bar.appendChild(btn);
   }
 
-  function hideMediaChip() {
-    // A short grace period so moving the cursor from the image onto the chip doesn't
-    // dismiss it mid-hop.
-    mediaChipHideTimer = window.setTimeout(() => {
-      if (mediaChip) mediaChip.hidden = true;
-      mediaChipFor = null;
-    }, 140);
-  }
-
-  function setupMediaChips() {
+  function setupBars() {
     document.querySelectorAll("img[data-ct-keys], video[data-ct-keys]").forEach((el) => {
       const key = mediaKeyOf(el);
-      if (!key || el.dataset.ctMediaChip) return;
-      el.dataset.ctMediaChip = "1";  // wire each element once, even across re-scans
-      el.addEventListener("mouseenter", () => showMediaChip(el, key));
-      el.addEventListener("mouseleave", hideMediaChip);
-      el.addEventListener("focus", () => showMediaChip(el, key));
-      el.addEventListener("blur", hideMediaChip);
+      // NOT data-ct-bar: that attribute marks the bar itself, and the click handler
+      // skips anything inside one. Putting it on the picture made the editor ignore
+      // every click on the picture — the exact gesture this feature exists for.
+      if (!key || el.dataset.ctWired) return;
+      el.dataset.ctWired = "1";  // wire each element once, even across re-scans
+      addMediaBar(el, key);
     });
+    document.querySelectorAll("[data-ct-nested]").forEach((el) => {
+      const keys = (el.getAttribute("data-ct-keys") || "").split(/\s+/).filter(Boolean);
+      if (!keys.length || el.dataset.ctWired) return;
+      el.dataset.ctWired = "1";
+      addKeysBar(el, keys);
+    });
+    if (SIZE_STEPS.length) {
+      document.querySelectorAll("ct-t").forEach((node) => {
+        const key = parseTarget(node).key;
+        // One control per FIELD, not per node: a `lines` value renders a node per item,
+        // and a nav label repeats in the header, the menu and the footer.
+        if (sizeBars.has(key)) return;
+        const field = FIELDS[key];
+        if (!field || field.resizable !== true) return;
+        addSizeBar(node, key);
+      });
+    }
+    scheduleBars();
+  }
+
+  let chromeOn = true;
+
+  /** Hide or show every block control at once — the way to look at the page as a
+   *  customer will, without leaving the editor. */
+  function showChrome(on) {
+    chromeOn = on;
+    if (barLayer) barLayer.hidden = !on;
+    if (on) scheduleBars();
+  }
+
+  let barFrame = 0;
+
+  /** Placing is measuring, and measuring on every scroll event is how a page stutters.
+   *  One placement per frame, however many events asked for it. */
+  function scheduleBars() {
+    if (barFrame || !bars.length || !chromeOn) return;
+    barFrame = window.requestAnimationFrame(() => {
+      barFrame = 0;
+      placeBars();
+    });
+  }
+
+  function overlaps(a, b) {
+    return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+  }
+
+  function placeBars() {
+    const vw = document.documentElement.clientWidth;
+    const vh = window.innerHeight;
+    // Read everything, then write everything. Interleaving them makes the browser lay
+    // the page out again for every single bar — 40 forced reflows per scrolled frame on
+    // a long page, which is exactly the stutter this chrome must not introduce.
+    const boxes = [];
+    const lines = [];
+    let remeasure = false;
+    bars.forEach((bar) => {
+      const anchor = bar.anchor;
+      if (!anchor.isConnected) {
+        boxes.push(null);
+        lines.push(null);
+        return;
+      }
+      const box = anchor.getBoundingClientRect();
+      // Laid out to nothing (a closed menu, an emptied string), or scrolled out of
+      // sight: no control, and nothing measured for it either.
+      if ((!box.width && !box.height) || box.bottom < 8 || box.top > vh - 8) {
+        boxes.push(null);
+        lines.push(null);
+        return;
+      }
+      // A hidden element measures 0, so a bar coming back into view is placed from the
+      // size it had last time and corrected on the next frame.
+      if (!bar.el.hidden) {
+        bar.w = bar.el.offsetWidth;
+        bar.h = bar.el.offsetHeight;
+      } else if (!bar.h) {
+        remeasure = true;
+      }
+      boxes.push(box);
+      // The LINES, not the block: a wrapped heading's bounding box is the union of its
+      // lines, so a two-word second line reserves the whole width and every free spot
+      // beside it reads as taken. On a phone that left nowhere to put anything.
+      const rects = anchor.getClientRects();
+      lines.push(rects.length ? Array.prototype.slice.call(rects) : [box]);
+    });
+
+    function cover(a, b) {
+      const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+      const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+      return w > 0 && h > 0 ? w * h : 0;
+    }
+
+    // Placed bars are obstacles for the ones after them: two controls stacked on each
+    // other hide one of the two, which is worse than either of them being slightly off.
+    const placed = [];
+    const plan = boxes.map((box, index) => {
+      if (!box) return null;
+      const bar = bars[index];
+      const w = bar.w || 0;
+      const h = bar.h || 0;
+      const beside = Math.min(Math.max(2, box.top), Math.max(2, vh - h - 2));
+      const right = Math.max(4, Math.min(box.right - w, vw - w - 4));
+      const left = Math.max(4, Math.min(box.left, vw - w - 4));
+      // In order of how little they cost the page: hugging the block above or below,
+      // then either side of it, and only as a last resort on top of the block itself.
+      // A control parked over someone else's words is the thing this must never do.
+      const spots = [];
+      if (box.top - h - 4 >= 2) {
+        spots.push({ top: box.top - h - 4, left: left });
+        spots.push({ top: box.top - h - 4, left: right });
+      }
+      if (box.right + 8 + w <= vw - 4) spots.push({ top: beside, left: box.right + 8 });
+      if (box.left - w - 8 >= 4) spots.push({ top: beside, left: box.left - w - 8 });
+      if (box.bottom + 4 + h <= vh - 2) {
+        spots.push({ top: box.bottom + 4, left: left });
+        spots.push({ top: box.bottom + 4, left: right });
+      }
+      spots.push({ top: beside, left: left });
+      spots.push({ top: beside, left: right });
+
+      let best = null;
+      let bestCost = Infinity;
+      for (let i = 0; i < spots.length; i++) {
+        const rect = {
+          left: spots[i].left,
+          top: spots[i].top,
+          right: spots[i].left + w,
+          bottom: spots[i].top + h,
+        };
+        // Free means free of every OTHER editable block — its own is what it labels.
+        let cost = 0;
+        for (let j = 0; j < lines.length; j++) {
+          if (j === index || !lines[j]) continue;
+          for (let k = 0; k < lines[j].length; k++) cost += cover(rect, lines[j][k]);
+        }
+        for (let j = 0; j < placed.length; j++) cost += cover(rect, placed[j]) * 4;
+        if (cost === 0) {
+          best = spots[i];
+          bestCost = 0;
+          break;
+        }
+        // Nowhere is free — a phone at 390px runs out of page long before it runs out
+        // of blocks. Then take the spot that hides the least, rather than the first one.
+        if (cost < bestCost) {
+          bestCost = cost;
+          best = spots[i];
+        }
+      }
+      placed.push({ left: best.left, top: best.top, right: best.left + w, bottom: best.top + h });
+      return best;
+    });
+
+    bars.forEach((bar, index) => {
+      const at = plan[index];
+      if (!at) {
+        bar.el.hidden = true;
+        return;
+      }
+      bar.el.hidden = false;
+      bar.el.style.top = at.top + "px";
+      bar.el.style.left = at.left + "px";
+    });
+    // One correcting pass for the bars that had never been measured.
+    if (remeasure) scheduleBars();
+  }
+
+  window.addEventListener("scroll", scheduleBars, { passive: true });
+  window.addEventListener("resize", scheduleBars);
+  // A photo that arrives late reflows everything under it.
+  window.addEventListener("load", scheduleBars);
+  if (window.ResizeObserver) {
+    // The document's own size, not each block's: cheap, and it catches the reflows that
+    // matter (an image loading, a size step, a menu opening). The work happens in the
+    // next frame, so this can never loop back into itself.
+    new window.ResizeObserver(scheduleBars).observe(document.documentElement);
   }
 
   document.addEventListener("keydown", (event) => {
@@ -940,4 +1258,5 @@
 
   makeReachable();
   post({ type: "ready", path: window.location.pathname, manifest: MANIFEST });
+  post({ type: "askChrome" });
 })();

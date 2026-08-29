@@ -29,7 +29,7 @@
                 <option value="{{ page.path }}"{% if page.path == start_path %} selected{% endif %}>{{ page.label }}</option>
                 {% endfor %}
             </select>
-            <span class="ed-hint">Tocá cualquier texto para editarlo.</span>
+            <span class="ed-hint">Tocá un texto para editarlo; cada bloque trae sus botones.</span>
         </div>
 
         {# Not tabs: these change the canvas WIDTH, they don't switch panels. Calling
@@ -44,12 +44,22 @@
                 {{ device.label }}
             </button>
             {% endfor %}
+            {# The controls stand on every block, which is the point — but a page you are
+               about to publish is also worth seeing as your customers will. On by
+               default; the choice is remembered per browser. #}
+            <button type="button" class="ed-device ed-chrome is-current" data-ed-chrome
+                    aria-pressed="true"
+                    title="Mostrar u ocultar los botones sobre cada bloque">Controles</button>
         </div>
 
         <div class="ed-bar-group ed-actions">
-            <button type="button" class="ed-btn ed-btn-ghost" data-ed-panel-toggle
-                    aria-expanded="false" aria-controls="edPanel">
-                Ver la lista de textos
+            {# Secondary on purpose. Editing happens on the page, block by block; this
+               list is the way out when a text is somewhere you cannot get to by
+               clicking (a <title>, an alt, a page you are not on). #}
+            <button type="button" class="ed-btn ed-btn-quiet" data-ed-panel-toggle
+                    aria-expanded="false" aria-controls="edPanel"
+                    title="Todos los textos de esta página, en una lista">
+                Lista de textos
             </button>
             <span class="ed-status" id="edStatus" data-ed-status role="status" aria-live="polite"></span>
             {# Outside the live region on purpose: a button inside role="status" gets
@@ -160,7 +170,7 @@
     </div>
 
     <p class="ed-footnote">
-        ¿Buscás un texto puntual? Está todo también en
+        ¿Un texto que no ves en la página? Está todo también en
         <a href="{{ url_for(sitecopy_bp ~ '.index') }}">la lista completa por sección</a>.
     </p>
 

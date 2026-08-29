@@ -8,6 +8,48 @@ All notable changes to **flask-sitecopy** are documented here. The format follow
 
 ### Changed
 
+- **The controls live on the blocks now, and they are always there.** Every editable
+  block on the canvas carries its own small bar: **A− / A+** to resize the text where
+  `text_sizes` is on, **✎ Cambiar imagen** on a picture or a clip, and a button of its
+  own for copy that reaches the page through an attribute of an element full of links (a
+  menu's screen-reader name). Nothing is on hover any more — a phone cannot hover, and a
+  control that has to be discovered is one most people never find.
+- **A text edited inline can be resized where it lives.** Only a full page body opens a
+  popup; everything else is typed straight onto the canvas, so until now the size of a
+  heading existed *only* in the side list. The step is staged like any other change: the
+  canvas updates at once, the panel's dropdown agrees with it, and the pair still counts
+  as one pending change.
+- **The list of texts is secondary, in the interface as well as in the pitch.** The
+  editor's toolbar button reads *Lista de textos* and is styled as the way out, not as an
+  action to take: it is for copy you cannot reach by clicking (a `<title>`, an alt text,
+  a page you are not on).
+- Copy that only lives in an attribute now says so on every device: a standing dashed
+  frame, instead of a badge that only a hover could raise.
+- Each bar takes the **first free gap** around its block — above it, then either side,
+  then below — measured against the real line boxes of every other editable string on the
+  page, so standing chrome does not park over someone else's words. Where a page leaves
+  no gap at all (a phone at 390px runs out of room long before it runs out of blocks) it
+  takes the spot that hides the least.
+- New **Controles** button in the editor's toolbar takes every block control off at once,
+  for looking at the page the way a customer will. On by default, remembered per browser,
+  and the text underneath stays editable either way.
+
+### Fixed
+
+- **A menu was announced to screen readers as one big button.** Any element carrying
+  attribute-only copy was promoted to `role="button"` with `tabindex="0"` — including a
+  `<nav>` full of links, which nests interactive controls inside a control (axe:
+  `nested-interactive`, serious). Containers keep their own semantics now and get a
+  control beside them instead. Found by scanning the canvas itself, which the standing
+  controls made worth scanning.
+- The bars honour `hidden`: an explicit `display` in a class rule beats the user-agent
+  sheet's `[hidden] { display: none }`, so a control for a block scrolled off the top
+  used to freeze in place, floating over whatever had taken its place.
+
+## [0.6.0] — 2026-08-28
+
+### Changed
+
 - **Clicking a picture on the canvas opens its own controls**, over the page, instead of
   opening the side panel and scrolling to a field. Preview, upload and the version
   gallery are all there — plus the alt text that lives on the same element, so one click
