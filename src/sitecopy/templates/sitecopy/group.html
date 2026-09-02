@@ -4,6 +4,7 @@
 
 {% block head %}<link rel="stylesheet" href="{{ url_for(sitecopy_bp ~ '.static', filename='css/sitecopy-shell.css') }}"><link rel="stylesheet" href="{{ url_for(sitecopy_bp ~ '.static', filename='css/sitecopy-admin.css') }}">{% endblock %}
 
+{% from "sitecopy/_field.html" import field_control %}
 {% block content %}
 <a class="adm-back" href="{{ url_for(sitecopy_bp ~ '.index') }}">← Todos los textos</a>
 
@@ -41,106 +42,67 @@
         {% if sec.note %}<p class="ct-section-note">{{ sec.note }}</p>{% endif %}
 
         {% for f in sec.fields %}
-        {% set st = states[f.key] %}
-        {% set invalid = f.key in invalid_keys %}
-        <div class="ct-field{% if invalid %} is-invalid{% elif st.has_draft %} is-draft{% elif st.is_overridden %} is-edited{% endif %}"
-             data-ct-item
-             {% if invalid %}data-ct-invalid{% endif %}
-             data-ct-search="{{ st.search_text }}"
-             data-ct-default="{{ f.default }}">
-            <div class="ct-field-head">
-                <label for="fld-{{ loop.index0 }}-{{ sec.key }}">{{ f.label }}</label>
-                <span class="ct-field-flags">
-                    {% if st.has_draft %}<span class="adm-tag ct-tag-draft">sin publicar</span>
-                    {% elif st.is_overridden %}<span class="adm-tag ct-tag-edited">editado</span>{% endif %}
-                </span>
-            </div>
-            {# Tie the hint and (when rejected) the error to the control, so a screen
-               reader hears them with the field instead of just seeing a red border. #}
-            {% set desc_ids = [] %}
-            {% if f.hint %}{% set _ = desc_ids.append('hint-' ~ f.key) %}{% endif %}
-            {% if invalid %}{% set _ = desc_ids.append('err-' ~ f.key) %}{% endif %}
-            {% set describedby = desc_ids | join(' ') %}
-            {% if f.hint %}<p class="hint" id="hint-{{ f.key }}">{{ f.hint }}</p>{% endif %}
-            {% if invalid %}<p class="ct-error" id="err-{{ f.key }}">{{ field_errors.get(f.key, 'Revisá este texto.') }}</p>{% endif %}
+        {{ field_control(f, states[f.key], loop.index0 ~ '-' ~ sec.key, f.key in invalid_keys,
+                         field_errors, size_steps, baseline_prefix) }}
+        {% endfor %}
 
-            <input type="hidden" name="{{ baseline_prefix }}{{ f.key }}" value="{{ st.value }}">
-            {% if f.is_multiline %}
-            <textarea id="fld-{{ loop.index0 }}-{{ sec.key }}" name="{{ f.key }}"
-                      rows="{{ 8 if f.type == 'rich' else 3 }}"
-                      maxlength="{{ f.max_length }}"
-                      data-ct-input
-                      {% if invalid %}aria-invalid="true"{% endif %}
-                      {% if describedby %}aria-describedby="{{ describedby }}"{% endif %}
-                      class="ct-input ct-input-{{ f.type }}">{{ st.value }}</textarea>
+        {# A collection: the same field controls, repeated once per item, plus the
+           membership the editor can change. Order posts as one hidden input; add and
+           delete are submits, so the whole thing works with JavaScript off. #}
+        {% for col in sec.collections %}
+        {% set cst = collections[col.key] %}
+        <div class="ct-collection" data-ct-collection data-ct-collection-key="{{ col.key }}"
+             data-ct-min="{{ col.min_items }}" data-ct-max="{{ col.max_items }}">
+            <div class="ct-collection-head">
+                <h3 class="ct-collection-title">{{ col.title }}</h3>
+                <span class="ct-collection-count">{{ cst["items"] | length }} de {{ col.max_items }}</span>
+            </div>
+            {% if col.note %}<p class="ct-section-note">{{ col.note }}</p>{% endif %}
+            <input type="hidden" name="{{ order_prefix }}{{ col.key }}"
+                   value="{{ cst['order'] }}" data-ct-order>
+
+            {% for item in cst["items"] %}
+            <div class="ct-collection-item" data-ct-collection-item data-ct-item-id="{{ item.id }}">
+                <div class="ct-collection-item-head">
+                    <span class="ct-collection-item-label">{{ col.item_label }} {{ item.position }}</span>
+                    <span class="ct-collection-item-tools">
+                        {# Reordering posts like everything else on this screen, so it
+                           works with JavaScript off. `formnovalidate` because moving a
+                           row is not the moment to enforce a half-typed field. #}
+                        <button type="submit" name="{{ collection_move }}"
+                                value="{{ col.key }}:{{ item.id }}:up" class="ct-collection-move"
+                                formnovalidate {% if loop.first %}disabled{% endif %}
+                                aria-label="Subir {{ col.item_label | lower }} {{ item.position }}">↑</button>
+                        <button type="submit" name="{{ collection_move }}"
+                                value="{{ col.key }}:{{ item.id }}:down" class="ct-collection-move"
+                                formnovalidate {% if loop.last %}disabled{% endif %}
+                                aria-label="Bajar {{ col.item_label | lower }} {{ item.position }}">↓</button>
+                        {% if cst["can_delete"] %}
+                        <button type="submit" name="{{ collection_delete }}"
+                                value="{{ col.key }}:{{ item.id }}" class="ct-collection-delete"
+                                formnovalidate
+                                data-ct-confirm="¿Borrar {{ col.item_label | lower }} {{ item.position }}? Se va a ver al publicar.">
+                            Borrar
+                        </button>
+                        {% endif %}
+                    </span>
+                </div>
+                {% for name, st in item["values"].items() %}
+                {{ field_control(st.field, st, col.key ~ '-' ~ item.id ~ '-' ~ name,
+                                 st.field.key in invalid_keys, field_errors, size_steps,
+                                 baseline_prefix, restorable=st.is_declared) }}
+                {% endfor %}
+            </div>
+            {% endfor %}
+
+            {% if cst["can_add"] %}
+            <button type="submit" name="{{ collection_add }}" value="{{ col.key }}"
+                    class="ct-collection-add" formnovalidate>
+                Agregar {{ col.item_label | lower }}
+            </button>
             {% else %}
-            {% set is_media = f.type in ('image', 'video') %}
-            {# NOT type="url" for image/video. A media field holds a LOCATION, and a site
-               path (`/static/hero.jpg`) is the documented, server-accepted value — but the
-               browser's own constraint validation rejects it as a URL and then refuses to
-               submit the whole form. One picture on a site path made the entire screen
-               unsaveable, JavaScript or no JavaScript, with a tooltip on an input nobody
-               was editing as the only clue. `inputmode` keeps the URL keyboard on a phone.
-               A `url` field stays type="url": those really must be absolute http(s), and
-               the server rejects anything else. #}
-            <input type="{{ 'url' if f.type == 'url' else 'text' }}"
-                   {% if is_media %}inputmode="url"{% endif %}
-                   id="fld-{{ loop.index0 }}-{{ sec.key }}" name="{{ f.key }}"
-                   value="{{ st.value }}" maxlength="{{ f.max_length }}"
-                   {% if invalid %}aria-invalid="true"{% endif %}
-                   {% if describedby %}aria-describedby="{{ describedby }}"{% endif %}
-                   {% if is_media %}data-ct-media-input data-ct-media-kind="{{ f.type }}"
-                   data-ct-field-key="{{ f.key }}" aria-controls="prev-{{ f.key }}"{% endif %}
-                   data-ct-input class="ct-input">
-            {% if is_media %}
-            {# A preview of what the URL points at, so the operator sees the picture/clip
-               and not just a path. JS keeps it in step as they type. A button lets them
-               upload a file instead of pasting a URL (progressive enhancement: shown by
-               JS only, since it posts via fetch). #}
-            <div class="ct-media-row" data-ct-media-row>
-                {% if f.type == 'video' %}
-                <video class="ct-media-preview" id="prev-{{ f.key }}" data-ct-media-preview
-                       src="{{ st.value }}" controls muted preload="metadata"
-                       {% if not st.value %}hidden{% endif %}
-                       onloadeddata="this.hidden=false" onerror="this.hidden=true"></video>
-                {% else %}
-                <img class="ct-media-preview" id="prev-{{ f.key }}" alt=""
-                     data-ct-media-preview src="{{ st.value }}"
-                     {% if not st.value %}hidden{% endif %}
-                     onload="this.hidden=false" onerror="this.hidden=true">
-                {% endif %}
-                <button type="button" class="ct-media-upload" data-ct-media-upload hidden>
-                    {{ 'Subir un video' if f.type == 'video' else 'Subir una imagen' }}
-                </button>
-            </div>
+            <p class="ct-section-note">Llegaste al máximo de {{ col.max_items }}.</p>
             {% endif %}
-            {% endif %}
-
-            {# How big the text renders. Only where the host turned sizes on and the
-               field can carry one — a picture's URL has no size. Posts with the form,
-               so it works with JavaScript off like everything else on this screen. #}
-            {% if size_steps and f.is_resizable %}
-            <div class="ct-size">
-                <label class="ct-size-label" for="size-{{ loop.index0 }}-{{ sec.key }}">Tamaño</label>
-                <select id="size-{{ loop.index0 }}-{{ sec.key }}" name="{{ st.size_name }}" class="ct-size-select">
-                    {% for step in size_steps %}
-                    <option value="{{ step.token }}"{% if step.token == st.size %} selected{% endif %}>{{ step.label }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            {% endif %}
-
-            <div class="ct-field-foot">
-                <span class="ct-counter" data-ct-counter data-max="{{ f.max_length }}" aria-live="polite"></span>
-                {% if st.value != f.default %}
-                {# No-JS safe: this submit posts the whole form and tells the server
-                   which field to reset, so nothing typed elsewhere is lost. #}
-                <button type="submit" name="restore" value="{{ f.key }}" class="ct-restore"
-                        title="El texto con el que vino la web">
-                    Volver al texto original
-                </button>
-                {% endif %}
-            </div>
         </div>
         {% endfor %}
     </section>

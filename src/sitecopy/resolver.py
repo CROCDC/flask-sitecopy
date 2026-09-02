@@ -24,6 +24,7 @@ from typing import Any
 from flask import Flask, g, has_app_context, has_request_context, request
 from markupsafe import Markup, escape
 
+from sitecopy.collections import collection_key_for, decode, items_key
 from sitecopy.registry import Group, Registry
 from sitecopy.sanitizer import safe_href, safe_media_src, sanitize
 from sitecopy.sizes import BASE as BASE_SIZE
@@ -273,7 +274,7 @@ def t(key: str, **params: Any) -> str | Markup:
     string that Jinja escapes as usual.
     """
     registry = current_registry()
-    field = registry.fields.get(key)
+    field = registry.field_for(key)
     if field is None:
         return _missing(key)
     tokens = _tokens_for(params)
@@ -340,7 +341,7 @@ def size_for(key: str) -> str:
     scale = size_scale()
     if not scale:
         return ""
-    field = current_registry().fields.get(key)
+    field = current_registry().field_for(key)
     if field is None or not field.is_resizable:
         return ""
     token = effective(size_key(key))
@@ -467,9 +468,60 @@ def t_optional(key: str, **params: Any) -> str | Markup | None:
     Sites address fields by a computed key (`f"category.{slug}.label"`) where a missing
     entry is a normal answer, not a bug. `t()` raises on those in debug on purpose.
     """
-    if key not in current_registry().fields:
+    if not current_registry().knows(key):
         return None
     return t(key, **params)
+
+
+# --- collections --------------------------------------------------------------
+
+
+def item_ids(collection_key: str) -> list[str]:
+    """The ids a collection holds right now, in order.
+
+    Draft-aware through the same `effective()` as every other value, so a membership
+    the editor has changed but not published shows in preview and stays invisible to
+    the public — "added three photos" waits its turn exactly like a retyped heading.
+    """
+    collection = current_registry().collection_for(collection_key)
+    if collection is None:
+        return []
+    stored = decode(effective(items_key(collection_key)))
+    # An absent (or unusable) row means the code's list; an EMPTY one means a
+    # collection the editor deliberately emptied. See collections.py.
+    if stored is None:
+        return list(collection.default_ids)
+    return stored
+
+
+def _items(collection_key: str, render: Any, **params: Any) -> list[dict[str, Any]]:
+    collection = current_registry().collection_for(collection_key)
+    if collection is None:
+        _missing(collection_key)
+        return []
+    return [
+        {
+            "id": item_id,
+            **{
+                spec.name: render(collection.row_key(item_id, spec.name), **params)
+                for spec in collection.item_fields
+            },
+        }
+        for item_id in item_ids(collection_key)
+    ]
+
+
+def t_list(collection_key: str, **params: Any) -> list[dict[str, Any]]:
+    """A collection's items, each a mapping of item-field name to rendered value.
+
+        {% for item in t_list('home.galeria') %}
+          <img src="{{ item.img }}" alt="{{ item.alt }}">
+        {% endfor %}
+
+    The count lives in the data, not in the template — which is the point: a hand-rolled
+    gallery has to repeat it in the registry AND in the markup, and the two drift.
+    """
+    return _items(collection_key, t, **params)
 
 
 # --- edit mode ----------------------------------------------------------------
@@ -544,7 +596,7 @@ def _needs_marker(key: str) -> bool:
     landed in an attribute or a `<title>`, where a wrapper cannot go). Anything else is
     emitted exactly as it was before this feature existed.
     """
-    if key not in current_registry().fields:
+    if not current_registry().knows(key):
         return False
     return is_edit_mode() or bool(size_for(key))
 
@@ -559,7 +611,7 @@ def editable(key: str, **params: Any) -> str | Markup:
 
 def editable_optional(key: str, **params: Any) -> str | Markup | None:
     """`t_optional()` for templates: click-to-edit when the key exists, else None."""
-    if key not in current_registry().fields:
+    if not current_registry().knows(key):
         return None
     return editable(key, **params)
 
@@ -587,6 +639,11 @@ def editable_lines(key: str, **params: Any) -> list[str] | list[Markup]:
     return wrapped
 
 
+def editable_list(collection_key: str, **params: Any) -> list[dict[str, Any]]:
+    """`t_list()` for templates: each value click-to-edit, in edit mode."""
+    return _items(collection_key, editable, **params)
+
+
 # --- convenience --------------------------------------------------------------
 
 
@@ -605,7 +662,9 @@ def tokens() -> dict[str, str]:
 
 def field_state(key: str) -> dict[str, Any]:
     """Everything the editor needs about one field, in one dict."""
-    field = current_registry().fields[key]
+    field = current_registry().field_for(key)
+    if field is None:
+        raise KeyError(f"Unknown site-text key: {key!r} (is it in your Registry?)")
     published, draft = _overrides().get(key, (None, None))
     live = published if published is not None else field.default
     previous = _previous_values().get(key)
@@ -658,12 +717,43 @@ def pending_draft_count(group: Group | None = None) -> int:
     def pending(key: str) -> bool:
         return overrides.get(key, (None, None))[1] is not None
 
-    return sum(1 for f in group.fields if pending(f.key) or pending(size_key(f.key)))
+    count = sum(1 for f in group.fields if pending(f.key) or pending(size_key(f.key)))
+    return count + _collection_changes(group, draft=True)
+
+
+def _collection_changes(group: Group, draft: bool) -> int:
+    """How many pending (or published) changes the collections on this screen carry.
+
+    Membership counts as one change — "reordered the gallery" is one thing the editor
+    did — and each edited item value counts as its own, exactly like a plain field. A
+    size counts with the value it belongs to, not separately.
+    """
+    if not group.collections:
+        return 0
+    registry = current_registry()
+    slot = 1 if draft else 0
+    wanted = {collection.key for collection in group.collections}
+    overrides = _overrides()
+    count = 0
+    touched: set[str] = set()
+    for key, values in overrides.items():
+        if values[slot] is None:
+            continue
+        owner = key_for(key) or key
+        collection_key = collection_key_for(owner)
+        if collection_key is not None:
+            count += collection_key in wanted
+            continue
+        found = registry.split_item_key(owner)
+        if found is not None and found[0].key in wanted:
+            touched.add(owner)
+    return count + len(touched)
 
 
 def override_count(group: Group) -> int:
     overrides = _overrides()
-    return sum(1 for f in group.fields if overrides.get(f.key, (None, None))[0] is not None)
+    plain = sum(1 for f in group.fields if overrides.get(f.key, (None, None))[0] is not None)
+    return plain + _collection_changes(group, draft=False)
 
 
 # --- wiring -------------------------------------------------------------------
@@ -684,6 +774,7 @@ def register_jinja(app: Flask, registry: Registry) -> None:
     app.jinja_env.globals.setdefault("t_lines", editable_lines)
     app.jinja_env.globals.setdefault("t_plain", t_plain)
     app.jinja_env.globals.setdefault("t_optional", editable_optional)
+    app.jinja_env.globals.setdefault("t_list", editable_list)
     app.jinja_env.globals.setdefault("sitecopy_preview", is_preview)
 
 

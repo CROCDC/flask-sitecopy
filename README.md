@@ -268,6 +268,93 @@ is always offered as *“Original”*). History rides the same `db` as the copy;
 
 ---
 
+## Collections
+
+Every field above is one row for one string, at a count the code fixes. A **collection**
+is a list whose *membership* the editor owns too: they can add an item, delete one and
+reorder them, without a deploy.
+
+```python
+from sitecopy import Collection, Item, ItemField
+
+Collection(
+    key="home.galeria",
+    title="Fotos",
+    item_label="Foto",                       # the button reads "Agregar foto"
+    item_fields=(
+        ItemField("img", "Imagen", type="image", default="/static/placeholder.jpg"),
+        ItemField("cap", "Epígrafe", type="text", default="Una foto"),
+    ),
+    default_items=(
+        Item("frente", img="/static/1.jpg", cap="De frente"),
+        Item("silla",  img="/static/2.jpg", cap="Sobre una silla"),
+    ),
+    min_items=1,
+    max_items=8,
+)
+```
+
+It goes on a `Section` next to the plain fields, as `collections=(...)`, and renders with
+`t_list`:
+
+```jinja
+{% for foto in t_list('home.galeria') %}
+  <img src="{{ foto.img }}" alt="{{ foto.cap }}">
+  <figcaption>{{ foto.cap }}</figcaption>
+{% endfor %}
+```
+
+The count lives in the data, not in the template — which is the point. Hand-rolling a
+gallery out of `img01…img05` means repeating the count in the registry *and* in the
+markup, and the two drift.
+
+**Ids are opaque and stable, never positional.** `Item("frente", …)` fixes that item's
+identity for the life of the site: reordering rewrites one row and moves no override, so
+an edit can never land on the photo below the one it was written for. (Positional keys —
+`gallery.destacados.03.src` — have exactly that failure mode.) The id is part of the row
+key, so renaming one drops what the editor wrote there, like any other key.
+
+### What it stores
+
+Two kinds of row, both plain strings in the same table. No new column, no migration, and
+a custom `TextStore` keeps working unchanged.
+
+| row                        | value                             | when the row is absent            |
+|----------------------------|-----------------------------------|-----------------------------------|
+| `items:home.galeria`       | `["frente","silla"]` — ordered ids | the ids/order of `default_items`   |
+| `home.galeria.frente.img`  | that item's image URL              | the default the code declared      |
+
+`items:` is a reserved namespace, like `size:` — `check_registry` refuses a registry key
+inside it.
+
+Membership is an ordinary override row, so it inherits the whole lifecycle for free:
+"added three photos and reordered" waits as a **draft**, shows in **preview**, goes live
+on **publish**, and `previous_value` is the way back. Deleting the row restores exactly
+the list the code declares.
+
+### The one thing this bends
+
+An item the editor **adds** lives only in the database — the code cannot have shipped a
+default for an id it does not know about. This is the single place the "a fresh database
+renders exactly what the code says" promise is narrowed, and it degrades the honest way:
+drop the membership row and the additions are gone, leaving the code's list.
+
+Item rows left behind by a deletion are swept when the deletion is *published* (never
+before, or a pending delete would take the live photo away). The sweep uses the store's
+`delete`, which is a convenience the bundled stores carry rather than one of the nine
+methods the contract requires — a store without it simply keeps the orphans, which are
+inert.
+
+### In the panel
+
+The collection draws as a card per item, with **↑ ↓** to reorder, **Borrar** on each and
+**Agregar** at the bottom. All of them are ordinary submits, so — like the rest of the
+admin — the whole thing works with JavaScript off. `min_items` and `max_items` are
+enforced server-side; `max_items` is a page-weight guard as much as a UI one.
+
+`check_templates` understands `t_list`: one call vouches for every field of every item
+the collection ships, so they are not reported as "declared but never rendered".
+
 ## Text sizes
 
 Off by default. Turn them on and every text grows a size control — **A− / A+ on the block
@@ -518,6 +605,13 @@ nothing renders.
   in the render path.
 - **One shared password** in the bundled auth, deliberately. If you need accounts and
   roles, you already have an admin — pass its `login_required`.
+- **Collections do not nest.** One flat list per `Section`. A gallery split into
+  categories declares one collection per category: the pieces inside a category are
+  editable, adding a *category* is a code change. A category drives filter UI and
+  anchors — it is structure, not content.
+- **Adding an item is a panel action, not a canvas one.** In the visual editor an
+  existing item's picture and caption are click-to-edit like anything else, but add,
+  delete and reorder live on the group's screen.
 
 ## License
 
