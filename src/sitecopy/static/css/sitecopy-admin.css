@@ -164,7 +164,7 @@ video.ct-media-preview { max-width: 280px; }
 .ct-collection-delete:hover { color: var(--adm-err); border-color: var(--adm-err); }
 .ct-collection-add {
     margin-top: 0.9rem; padding: 0 1rem; font-size: 0.88rem;
-    color: var(--adm-accent); border-color: var(--adm-accent); border-style: dashed;
+    color: var(--adm-accent-dk); border-color: var(--adm-accent); border-style: dashed;
 }
 .ct-collection-add:hover { background: rgba(181, 106, 58, 0.06); }
 

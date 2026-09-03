@@ -71,6 +71,11 @@ All notable changes to **flask-sitecopy** are documented here. The format follow
   written, and the screens stop rendering the button: a media field is edited as a URL,
   the same fallback `files=False` has always had. The check runs per render, so a
   directory that appears later switches uploads back on.
+- **The collections "Agregar" button missed WCAG AA contrast.** It painted its label
+  with the decorative accent (`--adm-accent`, 4.12:1 on white — under the 4.5:1 floor
+  for text this size), where the panel already keeps `--adm-accent-dk` for accent
+  coloured TEXT (5.56:1 on white, 4.86:1 on the panel's paper). The dashed border still
+  uses the lighter accent, which as a non-text cue only owes 3:1.
 - **A failed write answers instead of 500ing.** `enabled` is a prediction; the write is
   where the truth is (a full disk, a mount that turned read-only, a backend that is
   down). `/upload` now returns `503` with a sentence the editor shows — *"pegá la
