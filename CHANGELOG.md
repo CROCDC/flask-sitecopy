@@ -4,7 +4,7 @@ All notable changes to **flask-sitecopy** are documented here. The format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
-## [0.8.0] — 2026-09-02
+## [0.8.0] — 2026-09-03
 
 ### Added
 
