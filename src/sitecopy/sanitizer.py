@@ -275,6 +275,14 @@ def strip_tags(value: str) -> str:
 
 
 class _TagStripper(HTMLParser):
+    # HTMLParser normally switches to raw-text mode inside <script>/<style> and, when
+    # the tag never closes, DROPS everything it buffered waiting for the end tag. That
+    # is the one case `visible_text` exists to measure — an unterminated <script>
+    # swallowing the rest of the copy — so it would have read as "nothing was lost".
+    # Emptying the list keeps their content flowing through `handle_data` as ordinary
+    # text, which is all this stripper wants from them anyway.
+    CDATA_CONTENT_ELEMENTS: tuple[str, ...] = ()
+
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.chunks: list[str] = []

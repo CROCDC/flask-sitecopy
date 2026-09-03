@@ -25,6 +25,20 @@
   </ul>
 </section>
 
+{# A collection: the count lives in the data, so this template never says "three".
+   Adding a photo in the panel adds one here, with no deploy. #}
+<section class="galeria">
+  <h2>{{ t('home.galeria.heading') }}</h2>
+  <div class="galeria-grid">
+    {% for foto in t_list('home.galeria') %}
+      <figure>
+        <img src="{{ foto.img }}" alt="{{ foto.cap }}" loading="lazy">
+        <figcaption>{{ foto.cap }}</figcaption>
+      </figure>
+    {% endfor %}
+  </div>
+</section>
+
 <section class="catalogue">
   <h2>La colección</h2>
   <div class="product-grid">

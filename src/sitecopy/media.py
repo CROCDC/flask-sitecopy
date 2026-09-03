@@ -108,7 +108,27 @@ class LocalFileStore(FileStore):
 
     @property
     def enabled(self) -> bool:
-        return bool(self.directory)
+        return bool(self.directory) and self._writable()
+
+    def _writable(self) -> bool:
+        """Whether an upload could actually land on disk.
+
+        A read-only filesystem is the normal shape on a serverless host (Vercel, Lambda):
+        the deployment bundle is immutable and only /tmp takes writes. Answering False
+        there turns uploads off cleanly — the editor stops offering the button and a media
+        field stays editable by URL — instead of 500ing on the first upload. Recomputed on
+        every call rather than cached, so a directory that appears later switches uploads
+        back on.
+        """
+        # The upload directory is created on demand, so what decides this is the nearest
+        # ancestor that already exists.
+        path = self.directory
+        while not os.path.isdir(path):
+            parent = os.path.dirname(path) or "."
+            if parent == path:
+                return False
+            path = parent
+        return os.access(path, os.W_OK)
 
     def save(self, data: bytes, kind: MediaKind) -> str:
         name = hashlib.sha1(data).hexdigest()[:16] + kind.ext

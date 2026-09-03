@@ -16,7 +16,9 @@ Releases are driven by the **version in `pyproject.toml`** and shipped by mergin
    [`CHANGELOG.md`](CHANGELOG.md).
 3. Merge it. The [`Release` workflow](.github/workflows/release.yml) runs on the push to
    `main` and:
-   - runs the test suite (with the coverage gate);
+   - runs the full test suite — the unit/integration run on every supported Python
+     (with the coverage gate) **and** the Playwright editor suite; a failure in either
+     stops the release before anything is published or tagged;
    - checks whether `vX.Y.Z` is already tagged;
    - if **not**, builds the sdist + wheel, publishes to **PyPI via trusted publishing**,
      then creates the `vX.Y.Z` **git tag** and a **GitHub Release** whose notes are that

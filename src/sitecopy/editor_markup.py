@@ -238,7 +238,7 @@ def build_manifest(path: str, inline: list[str], hidden: list[str]) -> dict[str,
 
     fields: dict[str, Any] = {}
     for key in token_keys + rendered_keys():
-        field = registry.fields.get(key)
+        field = registry.field_for(key)
         if field is None:
             continue
         fields[key] = field_payload(key)
@@ -268,9 +268,21 @@ def build_manifest(path: str, inline: list[str], hidden: list[str]) -> dict[str,
 def field_payload(key: str) -> dict[str, Any]:
     """One field, in the shape both the in-page manifest and the panel consume."""
     registry = current_registry()
-    field = registry.fields[key]
+    field = registry.field_for(key)
+    if field is None:
+        raise KeyError(f"Unknown site-text key: {key!r} (is it in your Registry?)")
     state = field_state(key)
-    group = registry.groups_by_key[registry.field_group[key]]
+    # An item an editor added is declared nowhere, so it is located through its
+    # collection instead of through the field index.
+    group_key = registry.field_group.get(key)
+    section = registry.field_section.get(key, "")
+    if group_key is None:
+        found = registry.split_item_key(key)
+        if found is None:
+            raise KeyError(f"Unknown site-text key: {key!r} (is it in your Registry?)")
+        group_key = registry.collection_group[found[0].key]
+        section = found[0].title
+    group = registry.groups_by_key[group_key]
 
     # A rich value the editor loads goes into innerHTML in the canvas (an admin-origin
     # document). The public render sanitizes on the way out; do the same here, so a value
@@ -295,7 +307,7 @@ def field_payload(key: str) -> dict[str, Any]:
         "live": _clean(state["live"]),
         "group": group.key,
         "groupTitle": group.title,
-        "section": registry.field_section.get(key, ""),
+        "section": section,
         "hasDraft": state["has_draft"],
         "isOverridden": state["is_overridden"],
         **_size_payload(key, field),

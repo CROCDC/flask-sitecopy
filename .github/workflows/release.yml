@@ -17,8 +17,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The same gate CI applies to every branch. A push to main can arrive without a PR
+  # (a direct push, or Run workflow), so the release cannot lean on CI having run.
   test:
-    name: tests
+    name: tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: pip install -e ".[test]"
+      - run: pytest --cov --cov-report=term-missing --cov-fail-under=98
+
+  # The job above runs `-m "not e2e"` (pyproject's addopts), so on its own it would let a
+  # version ship with the editor broken in a real browser.
+  e2e:
+    name: e2e (editor, Playwright)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,12 +46,13 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -e ".[test]"
-      - run: pytest --cov --cov-report=term-missing --cov-fail-under=98
+      - run: pip install -e ".[test,e2e]"
+      - run: python -m playwright install --with-deps chromium
+      - run: pytest tests/e2e -m e2e
 
   release:
     name: build + publish to PyPI
-    needs: test
+    needs: [test, e2e]
     runs-on: ubuntu-latest
     permissions:
       # Trusted publishing: PyPI verifies this short-lived OIDC token instead of a

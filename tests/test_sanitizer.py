@@ -258,6 +258,19 @@ def test_visible_text_returns_the_text_that_would_show() -> None:
     assert visible_text("") == ""
 
 
+def test_visible_text_counts_what_an_unterminated_script_swallows() -> None:
+    """The exact case the loss guard exists for, and the one it used to miss.
+
+    HTMLParser buffers raw-text content waiting for `</script>` and throws the buffer
+    away when the tag never closes — so both sides of the comparison read "Hola", the
+    guard saw no loss, and the value was persisted with its copy gone.
+    """
+    broken = "<p>Hola</p><script>y todo lo que sigue se pierde"
+    assert "todo lo que sigue se pierde" in visible_text(broken)
+    # The whole point: measurably more text before sanitizing than after.
+    assert len(visible_text(broken)) > len(visible_text(sanitize(broken))) + 20
+
+
 # --- everything that is not markup and not copy ---------------------------------
 
 

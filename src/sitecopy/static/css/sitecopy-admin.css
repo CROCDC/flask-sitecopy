@@ -131,6 +131,46 @@ video.ct-media-preview { max-width: 280px; }
 .ct-field.is-invalid .ct-input { border-color: var(--adm-err); }
 .ct-error { color: var(--adm-err); font-size: 0.82rem; font-weight: 500; margin: 0.3rem 0 0; }
 
+/* A collection: items are cards inside the section, so the boundary between "one
+   photo" and "the next photo" is visible while scrolling a long gallery. */
+.ct-collection { margin-top: 1.2rem; border-top: 1px solid var(--adm-line); padding-top: 1rem; }
+.ct-collection-head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem;
+}
+.ct-collection-title { font-size: 0.98rem; font-weight: 500; margin: 0; }
+.ct-collection-count { font-size: 0.78rem; color: var(--adm-faint); }
+
+.ct-collection-item {
+    border: 1px solid var(--adm-line); border-radius: var(--adm-radius);
+    padding: 0.8rem 0.9rem; margin-top: 0.8rem;
+}
+.ct-collection-item-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 0.6rem; margin-bottom: 0.2rem;
+}
+.ct-collection-item-label { font-size: 0.82rem; color: var(--adm-soft); font-weight: 500; }
+.ct-collection-item-tools { display: flex; gap: 0.3rem; flex: none; }
+
+/* 44px targets: this screen is used on a phone, and these sit next to each other. */
+.ct-collection-move, .ct-collection-delete, .ct-collection-add {
+    font-family: inherit; cursor: pointer; background: none;
+    border: 1px solid var(--adm-input-line); border-radius: 8px;
+    color: var(--adm-soft); min-height: 44px; min-width: 44px;
+}
+.ct-collection-move:hover:not(:disabled),
+.ct-collection-delete:hover { color: var(--adm-ink); border-color: var(--adm-accent); }
+.ct-collection-move:disabled { opacity: 0.35; cursor: default; }
+.ct-collection-delete { padding: 0 0.7rem; font-size: 0.82rem; }
+.ct-collection-delete:hover { color: var(--adm-err); border-color: var(--adm-err); }
+.ct-collection-add {
+    margin-top: 0.9rem; padding: 0 1rem; font-size: 0.88rem;
+    color: var(--adm-accent-dk); border-color: var(--adm-accent); border-style: dashed;
+}
+.ct-collection-add:hover { background: rgba(181, 106, 58, 0.06); }
+
+/* The first field inside an item card must not draw the section-level divider. */
+.ct-collection-item .ct-field:first-of-type { border-top: none; padding-top: 0.2rem; }
+
 /* How big the text renders. A row of its own between the input and the counter, so it
    reads as a property of the text rather than as another action. */
 .ct-size { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.45rem; }

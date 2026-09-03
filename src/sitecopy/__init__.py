@@ -40,8 +40,11 @@ from sitecopy.media import (
 )
 from sitecopy.registry import (
     DEFAULT_MAX_LENGTH,
+    Collection,
     FieldType,
     Group,
+    Item,
+    ItemField,
     MEDIA_TYPES,
     Registry,
     Section,
@@ -50,6 +53,7 @@ from sitecopy.registry import (
 from sitecopy.resolver import (
     editable,
     editable_lines,
+    editable_list,
     editable_optional,
     field_state,
     group_states,
@@ -65,6 +69,7 @@ from sitecopy.resolver import (
     size_for,
     t,
     t_lines,
+    t_list,
     t_optional,
     t_plain,
     token,
@@ -82,10 +87,13 @@ except PackageNotFoundError:  # running from a source tree that was never instal
     __version__ = "0.0.0.dev0"
 
 __all__ = [
+    "Collection",
     "DEFAULT_MAX_LENGTH",
     "FieldType",
     "FileStore",
     "Group",
+    "Item",
+    "ItemField",
     "LocalFileStore",
     "MEDIA_TYPES",
     "MediaVersion",
@@ -106,6 +114,7 @@ __all__ = [
     "current_store",
     "editable",
     "editable_lines",
+    "editable_list",
     "editable_optional",
     "field_state",
     "group_states",
@@ -123,6 +132,7 @@ __all__ = [
     "strip_tags",
     "t",
     "t_lines",
+    "t_list",
     "t_optional",
     "t_plain",
     "token",
