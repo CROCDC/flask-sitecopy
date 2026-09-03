@@ -48,7 +48,10 @@ def test_the_size_can_be_changed_with_the_keyboard_alone(editor):
     select = size_select(editor)
     select.focus()
     before = select.input_value()
-    editor.page.keyboard.press("ArrowDown")
+    # Typeahead rather than ArrowDown: on macOS an arrow on a focused <select> opens the
+    # native popup instead of moving the selection, so the arrow tests the OS, not us.
+    # Typing a label's first letter picks that option on every platform.
+    editor.page.keyboard.type("g")  # "Grande"
     editor.page.wait_for_timeout(300)
     assert select.input_value() != before
     assert editor.page.locator("[data-ed-pending]").inner_text() == "1"
@@ -436,9 +439,15 @@ def test_the_size_control_is_on_the_block_without_being_asked_for(editor):
 def test_the_picture_button_is_there_without_hovering(editor):
     """It used to take a hover — a gesture a phone does not have."""
     editor.page.wait_for_timeout(400)
-    chip = editor.canvas.locator(".ct-media-chip")
-    assert chip.count() == 1 and chip.is_visible()
-    assert "Cambiar" in chip.inner_text()
+    # Located by the key each chip belongs to, not counted: every picture carries one,
+    # the gallery collection's items included. A bar is only placed while its picture is
+    # on screen, so scroll to it first — a scroll, still never a hover.
+    for key in ("home.hero.image", "home.galeria.frente.img"):
+        editor.canvas.locator(f'[data-ct-keys~="{key}"]').first.scroll_into_view_if_needed()
+        editor.page.wait_for_timeout(400)
+        chip = editor.canvas.locator(f'[data-ct-for="{key}"] .ct-media-chip')
+        assert chip.count() == 1, key
+        assert chip.is_visible() and "Cambiar" in chip.inner_text(), key
 
 
 def test_a_text_edited_inline_can_be_resized_where_it_lives(editor):

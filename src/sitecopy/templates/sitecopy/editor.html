@@ -10,7 +10,7 @@
      data-save-url="{{ url_for(sitecopy_bp ~ '.save_changes') }}"
      data-revert-url="{{ url_for(sitecopy_bp ~ '.revert') }}"
      data-discard-url="{{ url_for(sitecopy_bp ~ '.discard_all') }}"
-     data-upload-url="{{ url_for(sitecopy_bp ~ '.upload') }}"
+     {% if sitecopy_uploads %}data-upload-url="{{ url_for(sitecopy_bp ~ '.upload') }}"{% endif %}
      data-media-versions-url="{{ url_for(sitecopy_bp ~ '.media_versions_route') }}"
      data-csrf="{{ sitecopy_csrf }}"
      data-pending="{{ pending }}">

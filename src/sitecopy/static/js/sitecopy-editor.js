@@ -401,7 +401,8 @@
     const bar = document.createElement("div");
     bar.className = "ed-media-tools";
 
-    // Upload is only offered when the host wired a FileStore (the URL is rendered then).
+    // Upload is only offered when the site can actually store a file: the server renders
+    // the URL only then. Otherwise a media field is still editable as a URL.
     if (UPLOAD_URL) {
       const fileInput = document.createElement("input");
       fileInput.type = "file";

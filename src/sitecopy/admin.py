@@ -817,9 +817,14 @@ def _render(template: str, **context: Any) -> str:
     """Render one of the package's screens inside whatever chrome the host chose."""
     state = current_state()
     brand = state.brand() if callable(state.brand) else state.brand
+    store = state.file_store
     return render_template(
         f"sitecopy/{template}",
         sitecopy_base=state.base_template,
+        # The screens only offer the upload button when a FileStore is wired AND can write
+        # right now (a read-only filesystem on a serverless host cannot). Otherwise the
+        # media field is edited as a URL, which needs no server at all.
+        sitecopy_uploads=store is not None and store.enabled,
         sitecopy_brand=brand or "",
         sitecopy_bp=state.blueprint_name,
         sitecopy_site_url=state.site_url,
@@ -1217,7 +1222,22 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
             else:
                 detail = "un video (mp4 o webm)"
             return {"ok": False, "errors": [f"El archivo no es {detail} que podamos usar."]}, 400
-        url = file_store.save(data, kind)
+        try:
+            url = file_store.save(data, kind)
+        except OSError:
+            # A store that reported itself enabled can still fail to write: a read-only
+            # filesystem, a full disk, a remote backend that is down. The editor shows the
+            # message and the field stays editable by URL, so the panel is never stuck.
+            from flask import current_app
+
+            current_app.logger.exception("sitecopy: could not store an upload")
+            return {
+                "ok": False,
+                "errors": [
+                    "No pudimos guardar el archivo en este sitio. "
+                    "Pegá la dirección de la imagen o el video en su lugar."
+                ],
+            }, 503
         return {"ok": True, "url": url, "type": kind.kind}
 
     @bp.route("/media-versions")

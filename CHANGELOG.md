@@ -62,6 +62,21 @@ All notable changes to **flask-sitecopy** are documented here. The format follow
 - The pending/edited counters on a group now include its collections; without that,
   adding a photo left the screen claiming nothing was pending.
 
+### Fixed
+
+- **Uploads no longer break the panel on a read-only filesystem.** The zero-config
+  `LocalFileStore` writes under the app's static folder, which is immutable on a
+  serverless host (Vercel, Lambda) — so the panel offered an upload button that could
+  only ever fail. It now reports itself unavailable when the directory cannot be
+  written, and the screens stop rendering the button: a media field is edited as a URL,
+  the same fallback `files=False` has always had. The check runs per render, so a
+  directory that appears later switches uploads back on.
+- **A failed write answers instead of 500ing.** `enabled` is a prediction; the write is
+  where the truth is (a full disk, a mount that turned read-only, a backend that is
+  down). `/upload` now returns `503` with a sentence the editor shows — *"pegá la
+  dirección de la imagen o el video en su lugar"* — and logs the exception, rather than
+  handing the operator a traceback with no way forward.
+
 ### Notes for upgraders
 
 - Fully backwards-compatible: no existing behaviour changes and no migration. New public
@@ -72,6 +87,10 @@ All notable changes to **flask-sitecopy** are documented here. The format follow
   ships the feature.
 - Collections do not nest: one flat list per `Section`. A gallery split into categories
   declares one collection per category.
+- The upload fixes need no config change either. A site on an ordinary server behaves
+  exactly as before; one on a serverless host stops offering a button that could not
+  work. Uploads there come back by passing a `files=` store that writes to object
+  storage.
 
 ## [0.7.0] — 2026-08-29
 

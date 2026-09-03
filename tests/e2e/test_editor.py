@@ -65,7 +65,7 @@ def test_escape_cancels_an_edit(editor):
     before = editor.ct("home.hero.cta").inner_text()
     editor.ct("home.hero.cta").click()
     editor.page.wait_for_timeout(150)
-    editor.page.keyboard.press("Control+A")
+    editor.page.keyboard.press("ControlOrMeta+A")
     editor.page.keyboard.type("XXXX")
     editor.page.wait_for_timeout(150)
     editor.page.keyboard.press("Escape")
@@ -230,7 +230,9 @@ def test_the_media_chip_appears_over_the_picture(editor):
     """The 'icon on every image' — a floating change button on hover."""
     editor.canvas.locator(".hero-photo").hover()
     editor.page.wait_for_timeout(300)
-    chip = editor.canvas.locator(".ct-media-chip")
+    # By the key it belongs to, not by counting: the page has other pictures (the
+    # gallery is a collection), and each one carries a chip of its own.
+    chip = editor.canvas.locator('[data-ct-for="home.hero.image"] .ct-media-chip')
     assert chip.count() == 1 and chip.is_visible()
     assert "Cambiar" in chip.inner_text()
 

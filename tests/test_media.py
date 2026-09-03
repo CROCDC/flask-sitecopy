@@ -11,10 +11,12 @@ Three layers, tested bottom-up:
 from __future__ import annotations
 
 import io
+import os
 
 import pytest
 
 from sitecopy import (
+    FileStore,
     Group,
     LocalFileStore,
     MemoryMediaVersionStore,
@@ -95,6 +97,27 @@ def test_local_file_store_is_content_addressed_so_a_re_upload_is_idempotent(tmp_
 
 def test_a_local_store_with_no_directory_is_disabled() -> None:
     assert LocalFileStore("", "/u").enabled is False
+
+
+def test_a_local_store_whose_directory_does_not_exist_yet_is_enabled(tmp_path) -> None:
+    """The default wiring points at `<static>/sitecopy-uploads`, created on the first
+    upload — so the question is whether the nearest EXISTING ancestor lets us write."""
+    store = LocalFileStore(str(tmp_path / "static" / "sitecopy-uploads"), "/static/uploads")
+    assert store.enabled is True
+
+
+def test_a_local_store_on_a_read_only_filesystem_is_disabled(tmp_path) -> None:
+    """A serverless deployment bundle (Vercel, Lambda) is immutable: uploads turn
+    themselves off there instead of failing on the first file."""
+    static = tmp_path / "static"
+    static.mkdir()
+    static.chmod(0o500)
+    if os.access(static, os.W_OK):  # running as root, or a filesystem ignoring the mode
+        pytest.skip("this filesystem will not honour a read-only directory")
+    try:
+        assert LocalFileStore(str(static / "sitecopy-uploads"), "/static/uploads").enabled is False
+    finally:
+        static.chmod(0o700)
 
 
 # --- version history -----------------------------------------------------------
@@ -264,6 +287,37 @@ def test_upload_is_501_when_no_file_store_is_wired() -> None:
         content_type="multipart/form-data",
     )
     assert response.status_code == 501
+
+
+def test_a_store_that_cannot_write_answers_instead_of_500ing() -> None:
+    """`enabled` is a prediction; the write is where the truth is. A full disk, a
+    read-only mount or a backend that is down has to reach the editor as a sentence."""
+
+    class BrokenStore(FileStore):
+        def save(self, data, kind):
+            raise OSError(30, "Read-only file system")
+
+    app = build_app(files=BrokenStore())
+    client = app.test_client()
+    client.post("/admin/content/login", data={"password": "secreto"})
+    response = _post_file(client, IMAGE_KEY, PNG, "logo.png")
+    assert response.status_code == 503
+    payload = response.get_json()
+    assert payload["ok"] is False
+    assert "dirección" in payload["errors"][0]  # "paste the URL instead"
+
+
+@pytest.mark.parametrize("screen", ["/admin/content/", "/admin/content/home"])
+def test_the_screens_offer_the_upload_button_only_when_uploads_work(screen, tmp_path) -> None:
+    """Both editors read the upload URL out of the markup to decide whether to show the
+    button, so a site that cannot store files simply edits media by URL."""
+    working = build_app(files=LocalFileStore(str(tmp_path), "/static/uploads")).test_client()
+    working.post("/admin/content/login", data={"password": "secreto"})
+    assert b"data-upload-url" in working.get(screen).data
+
+    off = build_app(files=False).test_client()
+    off.post("/admin/content/login", data={"password": "secreto"})
+    assert b"data-upload-url" not in off.get(screen).data
 
 
 def test_upload_needs_a_session(upload_app) -> None:

@@ -261,6 +261,14 @@ Uploads are validated by **sniffing the real content type from the bytes** (neve
 filename), so an HTML polyglot renamed `logo.png` is refused; only `png/jpg/webp/gif` and
 `mp4/webm` are accepted, each under its size cap.
 
+**On a read-only filesystem** — the normal shape on a serverless host, where the deployed
+bundle is immutable — a `LocalFileStore` reports itself unavailable: the panel stops
+offering the upload button and media fields are edited as URLs, exactly as with
+`files=False`. Nothing to configure. Pass a `files=` store that writes somewhere real
+(S3, Cloudinary, a blob service) to turn uploads back on. A store that reports itself
+available and then fails the write anyway answers with a message the editor can show, not
+a traceback.
+
 Every time a media field is **published**, its URL is remembered, so the panel's
 **version gallery** can roll the picture or clip back to any earlier one (the code default
 is always offered as *“Original”*). History rides the same `db` as the copy; pass a custom

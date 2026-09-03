@@ -34,7 +34,7 @@
 
 <form method="post" action="{{ url_for(sitecopy_bp ~ '.group_save', group_key=group.key) }}"
       class="adm-form ct-form" id="contentForm"
-      data-upload-url="{{ url_for(sitecopy_bp ~ '.upload') }}">
+      {% if sitecopy_uploads %}data-upload-url="{{ url_for(sitecopy_bp ~ '.upload') }}"{% endif %}>
     <input type="hidden" name="_sitecopy_csrf" value="{{ sitecopy_csrf }}">
     {% for sec in group.sections %}
     <section class="ct-section" data-ct-section>
