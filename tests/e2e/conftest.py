@@ -168,10 +168,15 @@ class Editor:
         return self.page.locator("[data-ed-status]").inner_text()
 
     def type_over(self, key: str, text: str):
-        """Click a canvas node, select all, and type — the core edit gesture."""
+        """Click a canvas node, select all, and type — the core edit gesture.
+
+        `ControlOrMeta` because select-all is Cmd+A on macOS: Control+A there is the
+        emacs "go to start of line", so the new text is INSERTED before the old one and
+        the edit silently becomes an append.
+        """
         self.ct(key).click()
         self.page.wait_for_timeout(150)
-        self.page.keyboard.press("Control+A")
+        self.page.keyboard.press("ControlOrMeta+A")
         self.page.keyboard.type(text)
         self.page.wait_for_timeout(200)
 

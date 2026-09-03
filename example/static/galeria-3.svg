@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" role="img" aria-label="Detalle del cosido a mano">
+  <rect width="480" height="360" fill="#eef0e9"/>
+  <circle cx="240" cy="165" r="88" fill="#4f5d4a" opacity="0.18"/>
+  <rect x="152" y="150" width="176" height="120" rx="16" fill="#4f5d4a"/>
+  <path d="M196 150 v-26 a44 44 0 0 1 88 0 v26" fill="none" stroke="#4f5d4a" stroke-width="12"/>
+  <rect y="300" width="480" height="60" fill="#4f5d4a" opacity="0.12"/>
+</svg>

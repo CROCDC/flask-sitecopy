@@ -1,0 +1,107 @@
+{# One editable field: label, control, media preview, size, counter.
+
+   Shared by the plain fields on a screen and by the fields inside a collection item,
+   so the two can never drift into looking or behaving differently. `uid` only has to
+   be unique within the page — it ties the <label> to its control. #}
+
+{% macro field_control(f, st, uid, invalid, field_errors, size_steps, baseline_prefix, restorable=True) %}
+<div class="ct-field{% if invalid %} is-invalid{% elif st.has_draft %} is-draft{% elif st.is_overridden %} is-edited{% endif %}"
+     data-ct-item
+     {% if invalid %}data-ct-invalid{% endif %}
+     data-ct-search="{{ st.search_text }}"
+     data-ct-default="{{ f.default }}">
+    <div class="ct-field-head">
+        <label for="fld-{{ uid }}">{{ f.label }}</label>
+        <span class="ct-field-flags">
+            {% if st.has_draft %}<span class="adm-tag ct-tag-draft">sin publicar</span>
+            {% elif st.is_overridden %}<span class="adm-tag ct-tag-edited">editado</span>{% endif %}
+        </span>
+    </div>
+    {# Tie the hint and (when rejected) the error to the control, so a screen
+       reader hears them with the field instead of just seeing a red border. #}
+    {% set desc_ids = [] %}
+    {% if f.hint %}{% set _ = desc_ids.append('hint-' ~ uid) %}{% endif %}
+    {% if invalid %}{% set _ = desc_ids.append('err-' ~ uid) %}{% endif %}
+    {% set describedby = desc_ids | join(' ') %}
+    {% if f.hint %}<p class="hint" id="hint-{{ uid }}">{{ f.hint }}</p>{% endif %}
+    {% if invalid %}<p class="ct-error" id="err-{{ uid }}">{{ field_errors.get(f.key, 'Revisá este texto.') }}</p>{% endif %}
+
+    <input type="hidden" name="{{ baseline_prefix }}{{ f.key }}" value="{{ st.value }}">
+    {% if f.is_multiline %}
+    <textarea id="fld-{{ uid }}" name="{{ f.key }}"
+              rows="{{ 8 if f.type == 'rich' else 3 }}"
+              maxlength="{{ f.max_length }}"
+              data-ct-input
+              {% if invalid %}aria-invalid="true"{% endif %}
+              {% if describedby %}aria-describedby="{{ describedby }}"{% endif %}
+              class="ct-input ct-input-{{ f.type }}">{{ st.value }}</textarea>
+    {% else %}
+    {% set is_media = f.type in ('image', 'video') %}
+    {# NOT type="url" for image/video. A media field holds a LOCATION, and a site
+       path (`/static/hero.jpg`) is the documented, server-accepted value — but the
+       browser's own constraint validation rejects it as a URL and then refuses to
+       submit the whole form. One picture on a site path made the entire screen
+       unsaveable, JavaScript or no JavaScript, with a tooltip on an input nobody
+       was editing as the only clue. `inputmode` keeps the URL keyboard on a phone.
+       A `url` field stays type="url": those really must be absolute http(s), and
+       the server rejects anything else. #}
+    <input type="{{ 'url' if f.type == 'url' else 'text' }}"
+           {% if is_media %}inputmode="url"{% endif %}
+           id="fld-{{ uid }}" name="{{ f.key }}"
+           value="{{ st.value }}" maxlength="{{ f.max_length }}"
+           {% if invalid %}aria-invalid="true"{% endif %}
+           {% if describedby %}aria-describedby="{{ describedby }}"{% endif %}
+           {% if is_media %}data-ct-media-input data-ct-media-kind="{{ f.type }}"
+           data-ct-field-key="{{ f.key }}" aria-controls="prev-{{ f.key }}"{% endif %}
+           data-ct-input class="ct-input">
+    {% if is_media %}
+    {# A preview of what the URL points at, so the operator sees the picture/clip
+       and not just a path. JS keeps it in step as they type. A button lets them
+       upload a file instead of pasting a URL (progressive enhancement: shown by
+       JS only, since it posts via fetch). #}
+    <div class="ct-media-row" data-ct-media-row>
+        {% if f.type == 'video' %}
+        <video class="ct-media-preview" id="prev-{{ f.key }}" data-ct-media-preview
+               src="{{ st.value }}" controls muted preload="metadata"
+               {% if not st.value %}hidden{% endif %}
+               onloadeddata="this.hidden=false" onerror="this.hidden=true"></video>
+        {% else %}
+        <img class="ct-media-preview" id="prev-{{ f.key }}" alt=""
+             data-ct-media-preview src="{{ st.value }}"
+             {% if not st.value %}hidden{% endif %}
+             onload="this.hidden=false" onerror="this.hidden=true">
+        {% endif %}
+        <button type="button" class="ct-media-upload" data-ct-media-upload hidden>
+            {{ 'Subir un video' if f.type == 'video' else 'Subir una imagen' }}
+        </button>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {# How big the text renders. Only where the host turned sizes on and the
+       field can carry one — a picture's URL has no size. Posts with the form,
+       so it works with JavaScript off like everything else on this screen. #}
+    {% if size_steps and f.is_resizable %}
+    <div class="ct-size">
+        <label class="ct-size-label" for="size-{{ uid }}">Tamaño</label>
+        <select id="size-{{ uid }}" name="{{ st.size_name }}" class="ct-size-select">
+            {% for step in size_steps %}
+            <option value="{{ step.token }}"{% if step.token == st.size %} selected{% endif %}>{{ step.label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% endif %}
+
+    <div class="ct-field-foot">
+        <span class="ct-counter" data-ct-counter data-max="{{ f.max_length }}" aria-live="polite"></span>
+        {% if restorable and st.value != f.default %}
+        {# No-JS safe: this submit posts the whole form and tells the server
+           which field to reset, so nothing typed elsewhere is lost. #}
+        <button type="submit" name="restore" value="{{ f.key }}" class="ct-restore"
+                title="El texto con el que vino la web">
+            Volver al texto original
+        </button>
+        {% endif %}
+    </div>
+</div>
+{% endmacro %}

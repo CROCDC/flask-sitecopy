@@ -4,6 +4,99 @@ All notable changes to **flask-sitecopy** are documented here. The format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [0.8.0] — 2026-09-02
+
+### Added
+
+- **Collections: lists the editor can add to, delete from and reorder.** Every field
+  type so far is one row for one string, at a count the code fixes — so a gallery was
+  `img01…img05`, and the editor could swap a photo but never add one. A `Collection`
+  makes the *membership* editable too.
+
+  ```python
+  from sitecopy import Collection, Item, ItemField
+
+  Collection(
+      key="home.galeria",
+      title="Fotos",
+      item_label="Foto",
+      item_fields=(
+          ItemField("img", "Imagen", type="image", default="/static/placeholder.jpg"),
+          ItemField("cap", "Epígrafe", type="text", default="Una foto"),
+      ),
+      default_items=(Item("frente", img="/static/1.jpg", cap="De frente"),),
+      max_items=8,
+  )
+  ```
+
+  ```jinja
+  {% for foto in t_list('home.galeria') %}<img src="{{ foto.img }}">{% endfor %}
+  ```
+
+  The count leaves the template, so the registry and the markup can no longer disagree
+  about how many items there are.
+
+- **Membership is one ordinary override row**, under the new reserved `items:`
+  namespace — the same trick text sizes use. So there is **no schema change and no
+  migration**, a custom `TextStore` keeps working unchanged, and the whole draft →
+  preview → publish → undo lifecycle applies to "added three photos and reordered"
+  without a line of new machinery. Deleting the row restores exactly the list the code
+  declares.
+
+- **Stable, opaque item ids.** Reordering rewrites one row and moves no override, so an
+  edit can never land on the item below the one it was written for — the failure mode
+  positional keys (`gallery.destacados.03.src`) have by construction.
+
+- In the panel: a card per item with **↑ ↓**, **Borrar** and **Agregar**, all ordinary
+  submits, so it works with JavaScript off like the rest of the admin. `min_items` /
+  `max_items` are enforced server-side.
+
+- `check_registry` refuses a registry key inside `items:` and validates collections;
+  `check_templates` understands `t_list` (one call vouches for every field of every item
+  the collection ships).
+
+### Changed
+
+- The admin's field control moved into a shared macro (`templates/sitecopy/_field.html`)
+  so a plain field and a collection item cannot drift apart in look or behaviour.
+- The pending/edited counters on a group now include its collections; without that,
+  adding a photo left the screen claiming nothing was pending.
+
+### Fixed
+
+- **Uploads no longer break the panel on a read-only filesystem.** The zero-config
+  `LocalFileStore` writes under the app's static folder, which is immutable on a
+  serverless host (Vercel, Lambda) — so the panel offered an upload button that could
+  only ever fail. It now reports itself unavailable when the directory cannot be
+  written, and the screens stop rendering the button: a media field is edited as a URL,
+  the same fallback `files=False` has always had. The check runs per render, so a
+  directory that appears later switches uploads back on.
+- **The collections "Agregar" button missed WCAG AA contrast.** It painted its label
+  with the decorative accent (`--adm-accent`, 4.12:1 on white — under the 4.5:1 floor
+  for text this size), where the panel already keeps `--adm-accent-dk` for accent
+  coloured TEXT (5.56:1 on white, 4.86:1 on the panel's paper). The dashed border still
+  uses the lighter accent, which as a non-text cue only owes 3:1.
+- **A failed write answers instead of 500ing.** `enabled` is a prediction; the write is
+  where the truth is (a full disk, a mount that turned read-only, a backend that is
+  down). `/upload` now returns `503` with a sentence the editor shows — *"pegá la
+  dirección de la imagen o el video en su lugar"* — and logs the exception, rather than
+  handing the operator a traceback with no way forward.
+
+### Notes for upgraders
+
+- Fully backwards-compatible: no existing behaviour changes and no migration. New public
+  API: `Collection`, `Item`, `ItemField`, `t_list`, `editable_list`.
+- **Adopting a collection where you had numbered fields renames the rows.**
+  `home.galeria.img01` becomes `home.galeria.<id>.img`, and keys are an API — migrate the
+  rows or the editor loses what they wrote there. That is a per-site job; the library
+  ships the feature.
+- Collections do not nest: one flat list per `Section`. A gallery split into categories
+  declares one collection per category.
+- The upload fixes need no config change either. A site on an ordinary server behaves
+  exactly as before; one on a serverless host stops offering a button that could not
+  work. Uploads there come back by passing a `files=` store that writes to object
+  storage.
+
 ## [0.7.0] — 2026-08-29
 
 ### Changed
@@ -221,6 +314,7 @@ Earlier release — see the [git history](https://github.com/CROCDC/flask-siteco
 
 First tagged release.
 
+[0.8.0]: https://github.com/CROCDC/flask-sitecopy/releases/tag/v0.8.0
 [0.7.0]: https://github.com/CROCDC/flask-sitecopy/releases/tag/v0.7.0
 [0.6.0]: https://github.com/CROCDC/flask-sitecopy/releases/tag/v0.6.0
 [0.5.0]: https://github.com/CROCDC/flask-sitecopy/releases/tag/v0.5.0

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
+from dataclasses import replace
 from typing import Any
 
 from flask import (
@@ -38,8 +39,9 @@ from flask import (
 from sitecopy import auth as bundled_auth
 from sitecopy import csrf
 from sitecopy import resolver
+from sitecopy.collections import collection_key_for, decode, encode, items_key, new_id
 from sitecopy.editor_markup import field_payload
-from sitecopy.registry import Group, TextField
+from sitecopy.registry import Collection, Group, ItemField, TextField
 from sitecopy.media import sniff
 from sitecopy.sanitizer import safe_href, safe_media_src, sanitize, strip_tags, visible_text
 from sitecopy.sizes import BASE as BASE_SIZE
@@ -76,6 +78,16 @@ MAX_ERRORS = 20
 # draft. That deleted whatever another tab had parked in the same group. Each field
 # ships the value it was rendered with under this prefix; matching it means untouched.
 BASELINE_PREFIX = "_ct_was:"
+
+# How a collection posts. The order input carries the membership the screen is
+# showing; add/delete are submit buttons so the screen works with JavaScript off,
+# like every other control here.
+ORDER_PREFIX = "_ct_order:"
+COLLECTION_ADD = "collection_add"
+COLLECTION_DELETE = "collection_delete"
+# "<collection key>:<item id>:up|down". Reordering is a submit like everything else
+# here, so it works with JavaScript off; drag is an enhancement layered on top.
+COLLECTION_MOVE = "collection_move"
 
 
 # --- helpers -----------------------------------------------------------------
@@ -162,8 +174,18 @@ def _name(field: TextField) -> str:
     panel prints exactly this under every label.
     """
     registry = current_registry()
-    group = registry.groups_by_key[registry.field_group[field.key]]
+    group_key = registry.field_group.get(field.key)
     section = registry.field_section.get(field.key, "")
+    if group_key is None:
+        # An item the editor added is declared nowhere, so locate it through its
+        # collection instead of through the field index.
+        found = registry.split_item_key(field.key)
+        if found is not None:
+            group_key = registry.collection_group.get(found[0].key)
+            section = found[0].title
+    if group_key is None:
+        return f"«{field.label}»"
+    group = registry.groups_by_key[group_key]
     where = f"{group.title} · {section}" if section and section != group.title else group.title
     return f"«{field.label}», en {where}"
 
@@ -306,9 +328,228 @@ def _publish_defaults() -> dict[str, str]:
 
     Publish turns a draft equal to the default back into "no override" — which is what
     makes "volver a Normal" delete the size row instead of storing the word "base" in
-    it. The registry has a default for the copy; sizes bring their own.
+    it. The registry has a default for the copy, sizes bring their own, and so does a
+    collection — reordering a gallery back to the order the code ships should delete the
+    membership row, not store the code's own list in it.
     """
-    return {**current_registry().defaults, **resolver.size_defaults()}
+    registry = current_registry()
+    memberships = {
+        items_key(collection.key): encode(list(collection.default_ids))
+        for collection in registry.collections.values()
+    }
+    return {**registry.defaults, **resolver.size_defaults(), **memberships}
+
+
+# --- collections ---------------------------------------------------------------
+#
+# A collection posts three things: its membership (one hidden input holding the ordered
+# ids), a value per item field, and — when the editor pressed one — an add or a delete.
+# Membership is staged as a draft in its own row, so "added a photo" travels through
+# preview and publish exactly like a retyped heading does.
+
+
+def _live_ids(collection: Collection) -> list[str]:
+    """The PUBLISHED membership — what a draft equal to it collapses back to."""
+    row = current_store().get(items_key(collection.key))
+    stored = decode(row.published_value) if row is not None else None
+    return list(collection.default_ids) if stored is None else stored
+
+
+def _draft_ids(collection: Collection) -> list[str]:
+    """The membership the admin screen shows: the pending draft, else what is live.
+
+    `resolver.item_ids` answers for a RENDER, where a draft only counts in preview
+    mode. An admin POST is not a preview, so it would read straight past a pending add.
+    """
+    row = current_store().get(items_key(collection.key))
+    if row is not None and row.draft_value is not None:
+        ids = decode(row.draft_value)
+        if ids is not None:
+            return ids
+    return _live_ids(collection)
+
+
+def _item_field(
+    collection: Collection, item_id: str, spec: ItemField, position: int
+) -> TextField:
+    """The field that edits one item value, labelled the way an error should read it."""
+    declared = current_registry().fields.get(collection.row_key(item_id, spec.name))
+    field = collection.field_at(item_id, spec.name, declared.default if declared else spec.default)
+    assert field is not None  # `spec` came from this collection, so the name is known.
+    # "«Foto 3 — Imagen», en Inicio · Galería". The bare label repeats once per item, so
+    # on its own it would never say WHICH photo was rejected.
+    return replace(field, label=f"{collection.item_label} {position} — {spec.label}")
+
+
+def _posted_ids(collection: Collection, form: Any) -> list[str]:
+    """The membership this submission is working from: what the screen was showing."""
+    raw = form.get(f"{ORDER_PREFIX}{collection.key}")
+    if raw is None:
+        return _draft_ids(collection)
+    ids = decode(raw)
+    return _draft_ids(collection) if ids is None else ids
+
+
+def _collection_rows(group: Group) -> list[str]:
+    """Every row the collections on this screen own — membership, and their items'.
+
+    Both the pending and the published membership contribute, so one publish covers the
+    items an add staged AND the ones a delete is about to leave behind.
+    """
+    rows: list[str] = []
+    for collection in group.collections:
+        rows.append(items_key(collection.key))
+        for item_id in sorted(set(_live_ids(collection)) | set(_draft_ids(collection))):
+            rows.extend(
+                _with_size_rows(
+                    collection.row_key(item_id, spec.name) for spec in collection.item_fields
+                )
+            )
+    return rows
+
+
+def _sweep_orphans(group: Group) -> None:
+    """Drop the rows of items no longer in the PUBLISHED membership.
+
+    After the publish, never before: sweeping against the DRAFT membership would delete
+    the live rows of an item whose deletion is still pending, and the public page would
+    lose the photo while the change was supposed to be waiting in preview.
+
+    `delete` is a convenience the bundled stores carry, not one of the nine methods the
+    README promises a custom store has to answer — so a store without it simply keeps
+    the orphans. They are inert (nothing but the membership decides what renders); they
+    only cost rows.
+    """
+    store = current_store()
+    drop = getattr(store, "delete", None)
+    if not callable(drop):
+        return
+    registry = current_registry()
+    existing = list(store.as_map())
+    for collection in group.collections:
+        keep = set(_live_ids(collection))
+        prefix = f"{collection.key}."
+        for row_key in existing:
+            if not row_key.startswith(prefix):
+                continue
+            found = registry.split_item_key(row_key)
+            if found is None or found[1] in keep:
+                continue
+            drop(row_key)
+            drop(size_key(row_key))
+
+
+def _is_orphan(key: str) -> bool:
+    """True when a pending draft is one nothing can ever render again.
+
+    A size row is not one — it is read through the field it belongs to. Neither is a
+    collection's membership, nor an item an editor added: those are keys the registry
+    answers for by PATTERN rather than by declaration, so testing them against the field
+    index would discard every gallery edit on the next site-wide publish.
+    """
+    registry = current_registry()
+    owner = key_for(key) or key
+    collection_key = collection_key_for(owner)
+    if collection_key is not None:
+        return registry.collection_for(collection_key) is None
+    return not registry.knows(owner)
+
+
+def _every_collection_row() -> list[str]:
+    """The collection rows of the whole site, for the site-wide publish."""
+    return [row for group in current_registry().groups for row in _collection_rows(group)]
+
+
+def _apply_collections(group: Group, form: Any) -> tuple[list[str], list[str], int]:
+    """Stage the posted membership and item values. Same contract as `_apply_submission`."""
+    store = current_store()
+    errors: list[str] = []
+    error_keys: list[str] = []
+    staged = 0
+    add_target = (form.get(COLLECTION_ADD) or "").strip()
+    delete_target = (form.get(COLLECTION_DELETE) or "").strip()
+    move_target = (form.get(COLLECTION_MOVE) or "").strip()
+
+    for collection in group.collections:
+        ids = _posted_ids(collection, form)
+
+        if delete_target:
+            target, _, victim = delete_target.rpartition(":")
+            if target == collection.key:
+                ids = [item_id for item_id in ids if item_id != victim]
+
+        if move_target:
+            head, _, direction = move_target.rpartition(":")
+            target, _, subject = head.rpartition(":")
+            if target == collection.key and subject in ids and direction in ("up", "down"):
+                at = ids.index(subject)
+                to = at - 1 if direction == "up" else at + 1
+                if 0 <= to < len(ids):
+                    ids[at], ids[to] = ids[to], ids[at]
+
+        added = ""
+        if add_target == collection.key:
+            added = new_id()
+            ids.append(added)
+
+        if len(ids) > collection.max_items:
+            _add_error(
+                errors, error_keys,
+                f"«{collection.title}»: no puede tener más de {collection.max_items}.",
+                collection.key,
+            )
+            continue
+        if len(ids) < collection.min_items:
+            _add_error(
+                errors, error_keys,
+                f"«{collection.title}»: tiene que tener al menos {collection.min_items}.",
+                collection.key,
+            )
+            continue
+
+        for position, item_id in enumerate(ids, start=1):
+            for spec in collection.item_fields:
+                row_key = collection.row_key(item_id, spec.name)
+                field = _item_field(collection, item_id, spec, position)
+                if item_id == added:
+                    # A just-added item has nothing on screen yet: seed it with what the
+                    # code says an item of this shape starts as, so the editor lands on a
+                    # filled row to edit rather than on one the save would refuse.
+                    if spec.default:
+                        store.set_draft(row_key, spec.default)
+                        staged += 1
+                    continue
+                # Sizes ride the same submission, and are read before the text guard
+                # below: a screen may post a size for an item whose text it left alone.
+                size_name = size_key(row_key)
+                if size_name in form:
+                    token_value = _normalize_size(form.get(size_name, ""))
+                    size_error = _validate_size(field, token_value)
+                    if size_error:
+                        _add_error(errors, error_keys, size_error, row_key)
+                    else:
+                        _stage_size(field, token_value)
+                        staged += 1
+                if row_key not in form:
+                    continue
+                value = _normalize(field, form.get(row_key, ""))
+                baseline = form.get(f"{BASELINE_PREFIX}{row_key}")
+                if baseline is not None and value == _normalize(field, baseline):
+                    continue
+                error = _validate(field, value)
+                if error:
+                    _add_error(errors, error_keys, error, row_key)
+                    continue
+                store.set_draft(row_key, None if value == resolver.field_state(row_key)["live"] else value)
+                staged += 1
+
+        row = items_key(collection.key)
+        current = _draft_ids(collection)
+        if ids != current:
+            store.set_draft(row, None if ids == _live_ids(collection) else encode(ids))
+            staged += 1
+
+    return errors, error_keys, staged
 
 
 def _apply_submission(group: Group, form: Any) -> tuple[list[str], list[str], int]:
@@ -393,6 +634,49 @@ def _editor_values(group: Group, form: Any | None = None) -> dict[str, Any]:
     return states
 
 
+def _collection_states(group: Group, form: Any | None = None) -> dict[str, Any]:
+    """Per-collection state for the form screen: which items it shows, and in what order.
+
+    Like `_editor_values`, a rejected submission wins over what is stored, so the editor
+    never loses what was just typed — membership included.
+    """
+    registry = current_registry()
+    states: dict[str, Any] = {}
+    for collection in group.collections:
+        ids = _posted_ids(collection, form) if form is not None else _draft_ids(collection)
+        items = []
+        for position, item_id in enumerate(ids, start=1):
+            values: dict[str, Any] = {}
+            for spec in collection.item_fields:
+                row_key = collection.row_key(item_id, spec.name)
+                field = _item_field(collection, item_id, spec, position)
+                state = resolver.field_state(row_key)
+                if form is not None and row_key in form:
+                    state = dict(state, value=_normalize(field, form.get(row_key, "")))
+                size = resolver.size_state(row_key)["value"]
+                if form is not None and size_key(row_key) in form:
+                    size = _normalize_size(form.get(size_key(row_key), ""))
+                values[spec.name] = dict(
+                    state,
+                    field=field,
+                    size=size,
+                    size_name=size_key(row_key),
+                    search_text=f"{field.label} {row_key} {state['value']}".lower(),
+                    # An item the editor added has no original to go back to: the code
+                    # never declared it, so "volver al texto original" would mean "blank".
+                    is_declared=row_key in registry.fields,
+                )
+            items.append({"id": item_id, "position": position, "values": values})
+        states[collection.key] = {
+            "collection": collection,
+            "items": items,
+            "order": encode(ids),
+            "can_add": len(ids) < collection.max_items,
+            "can_delete": len(ids) > collection.min_items,
+        }
+    return states
+
+
 def _safe_start_path(raw: str | None) -> str:
     """The canvas may only be pointed at a local page of THIS site.
 
@@ -463,7 +747,7 @@ def pending_payload() -> dict[str, Any]:
         # Left as a key of its own it would be counted and never shown — the panel only
         # knows how to render registry fields — so the count and the list would disagree.
         owner = key_for(key) or key
-        if owner in registry.fields and owner not in keys:
+        if registry.knows(owner) and owner not in keys:
             keys.append(owner)
     return {"pendingKeys": keys, "pendingFields": {key: field_payload(key) for key in keys}}
 
@@ -533,9 +817,14 @@ def _render(template: str, **context: Any) -> str:
     """Render one of the package's screens inside whatever chrome the host chose."""
     state = current_state()
     brand = state.brand() if callable(state.brand) else state.brand
+    store = state.file_store
     return render_template(
         f"sitecopy/{template}",
         sitecopy_base=state.base_template,
+        # The screens only offer the upload button when a FileStore is wired AND can write
+        # right now (a read-only filesystem on a serverless host cannot). Otherwise the
+        # media field is edited as a URL, which needs no server at all.
+        sitecopy_uploads=store is not None and store.enabled,
         sitecopy_brand=brand or "",
         sitecopy_bp=state.blueprint_name,
         sitecopy_site_url=state.site_url,
@@ -728,7 +1017,7 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
                         {
                             key_for(str(key)) or str(key)
                             for key in requested
-                            if (key_for(str(key)) or str(key)) in registry.fields
+                            if registry.knows(key_for(str(key)) or str(key))
                         }
                     )
                 )
@@ -776,7 +1065,7 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
         store = current_store()
         data = request.get_json(silent=True) or {}
         raw = data.get("keys") if isinstance(data.get("keys"), list) else [data.get("key")]
-        keys = [str(item) for item in raw if str(item) in registry.fields]
+        keys = [str(item) for item in raw if registry.knows(str(item))]
         if not keys:
             return {"ok": False, "errors": ["Ese texto no existe."]}, 400
 
@@ -830,7 +1119,7 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
     @login_required
     def publish_all() -> Response:
         registry = current_registry()
-        everything = _with_size_rows(registry.fields)
+        everything = _with_size_rows(registry.fields) + _every_collection_row()
         problems = _invalid_drafts(everything)
         if problems:
             for message in problems.values():
@@ -843,11 +1132,14 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
         # renders them), so publishing the whole site drops them rather than leaving the
         # count stuck above zero forever. After publish, every remaining draft is one.
         # A size row is not an orphan — it is read through the field it belongs to.
-        orphans = [k for k in store.draft_keys() if (key_for(k) or k) not in registry.fields]
+        orphans = [k for k in store.draft_keys() if _is_orphan(k)]
         if orphans:
             store.discard_drafts(orphans)
         resolver.save()
-        _record_media_versions(registry.fields)
+        for group in registry.groups:
+            _sweep_orphans(group)
+        resolver.save()
+        _record_media_versions(everything)
         _flash_count(changed, "Se publicó {n} texto.", "Se publicaron {n} textos.")
         return redirect(url_for(f"{state.blueprint_name}.index"))
 
@@ -870,7 +1162,7 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
                     {
                         key_for(str(key)) or str(key)
                         for key in data["keys"]
-                        if (key_for(str(key)) or str(key)) in registry.fields
+                        if registry.knows(key_for(str(key)) or str(key))
                     }
                 )
             )
@@ -930,7 +1222,22 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
             else:
                 detail = "un video (mp4 o webm)"
             return {"ok": False, "errors": [f"El archivo no es {detail} que podamos usar."]}, 400
-        url = file_store.save(data, kind)
+        try:
+            url = file_store.save(data, kind)
+        except OSError:
+            # A store that reported itself enabled can still fail to write: a read-only
+            # filesystem, a full disk, a remote backend that is down. The editor shows the
+            # message and the field stays editable by URL, so the panel is never stuck.
+            from flask import current_app
+
+            current_app.logger.exception("sitecopy: could not store an upload")
+            return {
+                "ok": False,
+                "errors": [
+                    "No pudimos guardar el archivo en este sitio. "
+                    "Pegá la dirección de la imagen o el video en su lugar."
+                ],
+            }, 503
         return {"ok": True, "url": url, "type": kind.kind}
 
     @bp.route("/media-versions")
@@ -959,9 +1266,14 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
             "group.html",
             group=group,
             states=_editor_values(group),
+            collections=_collection_states(group),
             preview_path=group.resolve_preview_path(),
             pending=resolver.pending_draft_count(group),
             baseline_prefix=BASELINE_PREFIX,
+            order_prefix=ORDER_PREFIX,
+            collection_add=COLLECTION_ADD,
+            collection_delete=COLLECTION_DELETE,
+            collection_move=COLLECTION_MOVE,
             invalid_keys=[],
             field_errors={},
             size_steps=_size_steps(),
@@ -975,12 +1287,17 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
         store = current_store()
 
         if action == "discard":
-            dropped = store.discard_drafts(_with_size_rows(f.key for f in group.fields))
+            dropped = store.discard_drafts(
+                _with_size_rows(f.key for f in group.fields) + _collection_rows(group)
+            )
             resolver.save()
             _flash_count(dropped, "Se descartó {n} cambio.", "Se descartaron {n} cambios.")
             return redirect(url_for(f"{state.blueprint_name}.group_edit", group_key=group.key))
 
         errors, error_keys, _staged = _apply_submission(group, request.form)
+        c_errors, c_error_keys, _c_staged = _apply_collections(group, request.form)
+        errors += c_errors
+        error_keys += c_error_keys
         if errors:
             # Nothing is written when anything failed: a half-saved screen is worse than
             # a rejected one.
@@ -992,9 +1309,14 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
                     "group.html",
                     group=group,
                     states=_editor_values(group, request.form),
+                    collections=_collection_states(group, request.form),
                     preview_path=group.resolve_preview_path(),
                     pending=resolver.pending_draft_count(group),
                     baseline_prefix=BASELINE_PREFIX,
+                    order_prefix=ORDER_PREFIX,
+                    collection_add=COLLECTION_ADD,
+                    collection_delete=COLLECTION_DELETE,
+                    collection_move=COLLECTION_MOVE,
                     size_steps=_size_steps(),
                     invalid_keys=error_keys,
                     # Positionally aligned by `_add_error`; a field fails at most once
@@ -1005,7 +1327,7 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
             )
 
         if action == "publish":
-            keys = _with_size_rows(f.key for f in group.fields)
+            keys = _with_size_rows(f.key for f in group.fields) + _collection_rows(group)
             problems = _invalid_drafts(keys)
             if problems:
                 # Keep what was just typed (it validated); only the publish is refused.
@@ -1017,6 +1339,9 @@ def build_blueprint(state: SiteCopyState) -> Blueprint:
                     url_for(f"{state.blueprint_name}.group_edit", group_key=group.key)
                 )
             store.publish(keys, _publish_defaults())
+            resolver.save()
+            # After the publish, so the sweep reads the membership that just went live.
+            _sweep_orphans(group)
             resolver.save()
             _record_media_versions(keys)
             flash("Cambios publicados. Ya se ven en la web.", "success")

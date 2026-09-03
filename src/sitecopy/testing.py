@@ -32,6 +32,7 @@ from typing import Any
 
 from sitecopy.registry import Registry
 from sitecopy.sanitizer import safe_media_src, sanitize
+from sitecopy.collections import ITEMS_PREFIX, is_valid_id
 from sitecopy.sizes import SIZE_PREFIX
 
 # `t('key')` / `t_lines("key")` / `t_plain('key')` / `t_optional('key')` as written in
@@ -40,6 +41,11 @@ from sitecopy.sizes import SIZE_PREFIX
 KEY_CALL = re.compile(
     r"""\bt(?:_lines|_plain|_optional)?\(\s*(['"])([a-z0-9_.\-]+)\1\s*[,)]"""
 )
+
+# `t_list('home.galeria')`. A collection is addressed by its OWN key and hands out its
+# items itself, so no scan can ever see `home.galeria.cabin.img` written down — the
+# whole point of the feature is that the template does not name them.
+LIST_CALL = re.compile(r"""\bt_list\(\s*(['"])([a-z0-9_.\-]+)\1\s*[,)]""")
 
 # Group keys that would shadow one of the blueprint's own routes, since they share the
 # `/<url_prefix>/<group_key>` shape.
@@ -63,7 +69,7 @@ def check_registry(registry: Registry) -> list[str]:
         )
 
     for group in registry.groups:
-        if not group.sections or not group.fields:
+        if not group.sections or not (group.fields or group.collections):
             problems.append(f"group {group.key!r} has no fields")
         if not group.title.strip():
             problems.append(f"group {group.key!r} has no title")
@@ -72,14 +78,14 @@ def check_registry(registry: Registry) -> list[str]:
             problems.append(f"group {group.key!r} declares section {key!r} twice")
 
     for key, field in registry.fields.items():
-        if key.startswith(SIZE_PREFIX):
-            # Text sizes are stored as sibling rows under this namespace, so a registry
-            # key inside it would share a row with another field's size: whichever wrote
-            # last would win, silently.
-            problems.append(
-                f"{key}: {SIZE_PREFIX!r} is reserved (text sizes are stored there); "
-                f"rename the key"
-            )
+        for prefix, stored in ((SIZE_PREFIX, "text sizes"), (ITEMS_PREFIX, "collection membership")):
+            if key.startswith(prefix):
+                # These namespaces hold sibling rows, so a registry key inside one would
+                # share a row with another field's size (or with a collection's item
+                # list): whichever wrote last would win, silently.
+                problems.append(
+                    f"{key}: {prefix!r} is reserved ({stored} is stored there); rename the key"
+                )
         if not field.label.strip():
             problems.append(f"{key}: no label")
         if not field.default.strip():
@@ -109,6 +115,27 @@ def check_registry(registry: Registry) -> list[str]:
             if marker in low:
                 problems.append(f"{key}: ships placeholder copy ({marker!r})")
 
+    for key, collection in registry.collections.items():
+        if key.startswith((SIZE_PREFIX, ITEMS_PREFIX)):
+            problems.append(f"collection {key}: the key is inside a reserved namespace")
+        if not collection.title.strip():
+            problems.append(f"collection {key}: no title")
+        if collection.max_items < max(collection.min_items, len(collection.default_items)):
+            # Otherwise the collection ships in a state its own admin screen refuses to
+            # save, and the first edit is rejected for something the editor did not do.
+            problems.append(
+                f"collection {key}: max_items ({collection.max_items}) is below "
+                f"min_items or the number of items the code ships"
+            )
+        for item in collection.default_items:
+            if not is_valid_id(item.id):
+                problems.append(f"collection {key}: item id {item.id!r} is not alphanumeric")
+            unknown = set(item.values) - set(collection.item_fields_by_name)
+            for name in sorted(unknown):
+                # A typo here is silent otherwise: the value is simply never read, and
+                # the item renders the field's own default instead.
+                problems.append(f"collection {key}: item {item.id!r} sets unknown field {name!r}")
+
     for name, key in registry.tokens.items():
         if key not in registry.fields:
             problems.append(f"token {{{name}}} points at an unknown field: {key!r}")
@@ -137,6 +164,26 @@ def referenced_keys(*paths: str | Path, patterns: Iterable[str] = ("*.html", "*.
     return found
 
 
+def referenced_collections(
+    *paths: str | Path, patterns: Iterable[str] = ("*.html", "*.py")
+) -> dict[str, list[str]]:
+    """Every literal `t_list()` collection key referenced from those files -> where."""
+    found: dict[str, list[str]] = {}
+    for root in paths:
+        base = Path(root)
+        files = [base] if base.is_file() else [
+            p for pattern in patterns for p in sorted(base.rglob(pattern))
+        ]
+        for path in files:
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            for _quote, key in LIST_CALL.findall(text):
+                found.setdefault(key, []).append(str(path))
+    return found
+
+
 def check_templates(
     registry: Registry,
     *paths: str | Path,
@@ -159,7 +206,20 @@ def check_templates(
         for key, where in sorted(referenced.items())
         if key not in registry.fields
     ]
+    lists = referenced_collections(*paths, patterns=patterns)
+    problems += [
+        f"{key}: t_list() references a collection nobody declared "
+        f"(in {', '.join(sorted(set(where)))})"
+        for key, where in sorted(lists.items())
+        if key not in registry.collections
+    ]
     known = set(referenced) | set(dynamic) | set(registry.token_fields)
+    # One `t_list()` call renders every field of every item the collection ships, so a
+    # rendered collection vouches for all of them at once.
+    for key in lists:
+        collection = registry.collections.get(key)
+        if collection is not None:
+            known |= {f.key for f in collection.declared_fields()}
     dead = sorted(set(registry.fields) - known)
     problems += [f"{key}: declared but never rendered" for key in dead]
     return problems

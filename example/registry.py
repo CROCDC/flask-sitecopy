@@ -11,7 +11,7 @@ group carries a ``preview_path`` so the panel can open the right page in the can
 
 from __future__ import annotations
 
-from sitecopy import Group, Registry, Section, TextField
+from sitecopy import Collection, Group, Item, ItemField, Registry, Section, TextField
 
 # --- Inicio --------------------------------------------------------------------------
 
@@ -55,6 +55,41 @@ HOME = Group(
                     "Los tres, uno por línea",
                     "Cuero de cactus, cero crueldad\nCosido a mano, garantía de por vida\nEnvío gratis en todo el país",
                     type="lines",
+                ),
+            ),
+        ),
+        Section(
+            key="galeria",
+            title="Galería",
+            note=(
+                "Las fotos de la galería. Se pueden agregar, borrar y reordenar — a "
+                "diferencia del resto, acá la LISTA también se edita, no sólo los textos."
+            ),
+            fields=(
+                TextField("home.galeria.heading", "Título de la sección", "La galería"),
+            ),
+            collections=(
+                Collection(
+                    key="home.galeria",
+                    title="Fotos",
+                    item_label="Foto",
+                    item_fields=(
+                        ItemField(
+                            "img",
+                            "Imagen",
+                            type="image",
+                            default="/static/galeria-1.svg",
+                            hint="Subí un archivo o pegá un link (https://…) o una ruta como /static/foto.jpg.",
+                        ),
+                        ItemField("cap", "Epígrafe", type="text", default="Una foto de la colección"),
+                    ),
+                    default_items=(
+                        Item("frente", img="/static/galeria-1.svg", cap="La mochila de cactus, de frente"),
+                        Item("silla", img="/static/galeria-2.svg", cap="Un bolso cruzado sobre una silla"),
+                        Item("cosido", img="/static/galeria-3.svg", cap="El detalle del cosido a mano"),
+                    ),
+                    min_items=1,
+                    max_items=8,
                 ),
             ),
         ),

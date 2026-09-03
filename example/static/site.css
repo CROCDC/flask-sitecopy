@@ -131,3 +131,13 @@ main { max-width: 960px; margin: 0 auto; padding: clamp(1.5rem, 5vw, 3.5rem) cla
 @media (max-width: 640px) {
   .hero { grid-template-columns: 1fr; }
 }
+
+.galeria { margin-bottom: 3.5rem; }
+.galeria h2 { font-size: 1.6rem; margin: 0 0 1.25rem; }
+.galeria-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+.galeria figure { margin: 0; }
+.galeria img {
+  width: 100%; aspect-ratio: 4 / 3; object-fit: cover;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.galeria figcaption { font-size: 0.9rem; color: var(--muted); margin-top: 0.5rem; }
