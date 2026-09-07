@@ -32,6 +32,7 @@ worked example of the wiring in the main README:
 | The `<title>` / meta description in the side panel, not on the page | invisible-copy editing |
 | Click the hero photo → its own dialog with the URL, **upload**, **old versions** and the alt text | editing the thing you clicked |
 | The **“✎ Cambiar”** chip on the photo, and the version gallery in the panel | media uploads + history |
+| The hero's `srcset`, dropped by `is_stock_photo()` the moment the photo is replaced | the [guard every responsive site needs](../docs/INTEGRATION.md#responsive-images-need-a-guard) |
 | The menu's screen-reader name, which opens in the panel | attribute-only copy |
 | "Los tres valores" edited as one-per-line      | `lines` field |
 | The Nosotros body with headings and bold       | `rich` (sanitized HTML) field |

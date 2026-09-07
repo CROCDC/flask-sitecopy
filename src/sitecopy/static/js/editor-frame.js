@@ -212,6 +212,49 @@
     scheduleBars();
   }
 
+  // Where a parked source waits, and which attribute it came from. See parkSources.
+  const PARKED = "data-ct-parked";
+  const PARKED_ATTR = "data-ct-parked-attr";
+
+  /** Park (or give back) the responsive sources that outrank `el`'s own `src`.
+   *
+   *  A responsive site writes `srcset` on the <img> and `<source>`s inside a <picture>,
+   *  and the browser picks from those WITHOUT ever reading `src`. So pointing the field
+   *  somewhere else and setting `src` changed nothing on screen: the canvas went on
+   *  painting the old photo while the panel reported the edit. Those sources describe
+   *  the picture that was there — narrow copies of it, generated ahead of time — so the
+   *  moment the field points at a different file they are stale, and the replacement has
+   *  none of its own. Parking rather than deleting is what lets an undo put them back.
+   */
+  function parkSources(el, park) {
+    const nodes = [el];
+    const parent = el.parentElement;
+    if (parent && parent.tagName === "PICTURE") {
+      parent.querySelectorAll("source").forEach((node) => nodes.push(node));
+    } else if (el.tagName === "VIDEO") {
+      el.querySelectorAll("source").forEach((node) => nodes.push(node));
+    }
+    nodes.forEach((node) => {
+      if (park) {
+        // A <source> carries `srcset` inside a <picture> and `src` inside a <video>.
+        const attr = node.hasAttribute("srcset")
+          ? "srcset"
+          : node.tagName === "SOURCE" && node.hasAttribute("src")
+            ? "src"
+            : null;
+        if (attr && !node.hasAttribute(PARKED_ATTR)) {
+          node.setAttribute(PARKED, node.getAttribute(attr));
+          node.setAttribute(PARKED_ATTR, attr);
+          node.removeAttribute(attr);
+        }
+      } else if (node.hasAttribute(PARKED_ATTR)) {
+        node.setAttribute(node.getAttribute(PARKED_ATTR), node.getAttribute(PARKED));
+        node.removeAttribute(PARKED);
+        node.removeAttribute(PARKED_ATTR);
+      }
+    });
+  }
+
   /** An image/video field lands in a `src` attribute, so it has no <ct-t> node to
    *  refresh — but a media change IS visual, so mirror the new URL onto the element live.
    *  The key sits in data-ct-keys (recorded by editor_markup for attribute copy), so an
@@ -222,6 +265,9 @@
     const raw = String(CURRENT[key] == null ? "" : CURRENT[key]);
     const src = imageSrcSafe(interpolate(raw));
     document.querySelectorAll('img[data-ct-keys~="' + key + '"], video[data-ct-keys~="' + key + '"]').forEach((el) => {
+      const changed = raw !== ((FIELDS[key] || {}).raw || "");
+      // Before the src, so the browser never gets a chance to re-pick the old file.
+      parkSources(el, changed);
       if (src) {
         if (el.getAttribute("src") !== src) {
           el.setAttribute("src", src);
@@ -232,7 +278,7 @@
         // value the server will refuse to publish.
         el.removeAttribute("src");
       }
-      if (raw !== ((FIELDS[key] || {}).raw || "")) el.setAttribute("data-ct-dirty", "");
+      if (changed) el.setAttribute("data-ct-dirty", "");
       else el.removeAttribute("data-ct-dirty");
     });
   }

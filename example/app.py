@@ -21,7 +21,7 @@ import json
 from flask import Flask, abort, render_template
 from flask_sqlalchemy import SQLAlchemy
 
-from sitecopy import SiteCopy, t, t_plain
+from sitecopy import SiteCopy, field_state, t, t_plain
 
 from example.registry import build_registry
 
@@ -63,6 +63,16 @@ def create_app(config: dict | None = None) -> Flask:
     if config:
         app.config.update(config)
     db.init_app(app)
+
+    @app.template_global()
+    def is_stock_photo(key: str) -> bool:
+        """True while `key` still renders the picture the code ships.
+
+        Counts a pending draft, not just what is published: the preview has to show the
+        replacement too, and `field_state` is what knows about both.
+        """
+        state = field_state(key)
+        return state["value"] == state["default"]
 
     @app.route("/")
     def home() -> str:

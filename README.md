@@ -43,6 +43,16 @@ python -m example.app        # http://127.0.0.1:5000
 Open `/` for the public site and `/admin/content/` for the editor (password: `demo`).
 See [`example/README.md`](example/README.md) for what each part demonstrates.
 
+### Where to go next
+
+| you want to | read |
+|---|---|
+| understand the design before committing to it | [Why it is shaped like this](#why-it-is-shaped-like-this) |
+| put this into a site that already exists | **[docs/INTEGRATION.md](docs/INTEGRATION.md)** — the order to do it in, and the mistakes already made in production |
+| look up an option, a field type, a guarantee | the rest of this README |
+| see it all working | [`example/`](example/) |
+| know what the test suite covers | [docs/TESTING.md](docs/TESTING.md) |
+
 ---
 
 ## Why it is shaped like this
@@ -130,10 +140,17 @@ registration order, and the editor rewrites the HTML of an `?edit=1` response �
 | `brand`            | —                    | str or callable, shown in the chrome and the SERP card |
 | `site_url`         | `""`                 | canonical origin, for the share/search cards |
 | `external_content` | —                    | `{"selector": …, "message": …}`, see below |
+| `files`            | local `<static>/sitecopy-uploads` | the `FileStore` uploads are written to; `False` disables uploads |
+| `media_store`      | the same `db`        | the `MediaVersionStore` — *history of URLs*, for the rollback gallery, **not** where files go |
+| `upload_max_bytes` | 8 MB / 128 MB        | per-kind upload caps, `{"image": …, "video": …}` |
 | `text_sizes`       | `False`              | let the editor change how big a text renders |
 | `text_sizes_css`   | `"inline"`           | `"link"` for a CSP with no `unsafe-inline` styles |
 | `nav`              | `[]`                 | extra links for the bundled chrome |
 | `blueprint_name`   | `"sitecopy"`         | rename to mount two registries on one app |
+
+New to the library, or moving an existing site onto it? The
+**[integration guide](docs/INTEGRATION.md)** is the order to do it in, plus the mistakes
+that have actually been made in production.
 
 ### Auth
 
@@ -239,6 +256,35 @@ swaps it in place. Accepted values are absolute `http(s)` links and site paths
 `mailto:`/`tel:` are refused — on save and, like `url`, again on render, falling back to
 the registry default.
 
+#### Responsive images need a guard
+
+A `srcset` on the `<img>`, or `<source>`s inside a `<picture>`, **outrank `src`**: the
+browser picks from those and never reads the attribute the field controls. Those variants
+are narrow copies of the photo that ships with the site and an uploaded replacement has
+none — so offer them only while the stock photo is still the photo:
+
+```jinja
+<img src="{{ t('home.hero.image') }}" alt="{{ t('home.hero.alt') }}"
+     {% if is_stock_photo('home.hero.image') %}
+     srcset="/static/hero-400.jpg 400w, /static/hero-800.jpg 800w" sizes="100vw"
+     {% endif %}>
+```
+
+```python
+from sitecopy import field_state
+
+@app.template_global()
+def is_stock_photo(key: str) -> bool:
+    state = field_state(key)          # "value" counts a pending draft; "is_overridden" does not
+    return state["value"] == state["default"]
+```
+
+Without it the published page — and the preview — keep showing the old picture while the
+panel reports the change. The visual editor's canvas parks those sources on its own, so
+the live swap works either way; the guard is what your own templates owe the *rendered*
+page. `example/` ships this pattern, and the
+[integration guide](docs/INTEGRATION.md#4-images-the-part-that-bites) has the long version.
+
 ### Uploads and version history
 
 Wire a **`FileStore`** and the editor can upload a file straight from the panel instead of
@@ -273,6 +319,12 @@ Every time a media field is **published**, its URL is remembered, so the panel's
 **version gallery** can roll the picture or clip back to any earlier one (the code default
 is always offered as *“Original”*). History rides the same `db` as the copy; pass a custom
 `media_store` to change that.
+
+> **`files=` and `media_store=` are different things.** `files=` is where an uploaded
+> file's *bytes* land; `media_store=` is the *history of URLs* behind the rollback
+> gallery. Passing a `FileStore` as `media_store=` is accepted at boot and breaks later —
+> the gallery 500s, and uploads go to the default location instead of the one you named.
+> If you are choosing the upload directory, the option is `files=`.
 
 ---
 
