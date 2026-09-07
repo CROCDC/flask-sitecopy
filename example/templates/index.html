@@ -12,8 +12,14 @@
   </div>
   {# An `image` field: the src is editable copy, so clicking the picture in the editor
      opens it in the side panel and a pasted URL swaps it live. The alt text is its own
-     (invisible) field right beside it. #}
-  <img class="hero-photo" src="{{ t('home.hero.image') }}" alt="{{ t('home.hero.alt') }}">
+     (invisible) field right beside it.
+
+     The narrow copies are generated ahead of time for the photo that ships with the
+     site, so they are only offered while that is still the photo: a replaced one has
+     no variants, and a `srcset` left behind outranks `src` — the browser would go on
+     painting the old picture. Any site with responsive images needs this guard. #}
+  <img class="hero-photo" src="{{ t('home.hero.image') }}" alt="{{ t('home.hero.alt') }}"
+       {% if is_stock_photo('home.hero.image') %}srcset="/static/hero-400.svg 400w, /static/hero-800.svg 800w" sizes="100vw"{% endif %}>
 </section>
 
 <section class="values">

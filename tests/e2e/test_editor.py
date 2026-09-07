@@ -23,6 +23,34 @@ def _public_text(page, base_url, selector: str) -> str:
         pub.close()
 
 
+def _preview_attr(page, base_url, group: str, selector: str, attr: str) -> str | None:
+    """Open the group's preview SCREEN and read an attribute off the framed page.
+
+    The screen is the real page under `?preview=1` in a device frame, so this is what the
+    owner is actually looking at when they ask "did my change land?".
+    """
+    prev = page.context.new_page()
+    try:
+        prev.goto(f"{base_url}/admin/content/{group}/preview", wait_until="networkidle")
+        prev.wait_for_timeout(800)
+        return prev.frame_locator("[data-ct-iframe]").locator(selector).first.get_attribute(attr)
+    finally:
+        prev.close()
+
+
+def _current_src(locator) -> str:
+    """The file the browser actually chose — `srcset` outranks `src`, so this is the
+    only honest answer to "did the picture change?"."""
+    return locator.evaluate("el => el.currentSrc")
+
+
+# A 1x1 PNG, the smallest thing `sniff` will accept as an image.
+_PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+    "0000000a49444154789c6360000002000100"
+)
+
+
 def test_editor_loads_with_editable_nodes(editor):
     assert editor.page.title().startswith("Editor visual")
     count = editor.canvas.locator("ct-t[data-k]").count()
@@ -189,16 +217,49 @@ def test_an_image_url_swaps_the_picture_live(editor):
     assert "sin guardar" in editor.status().lower()
 
 
+def test_a_responsive_photo_repaints_on_the_canvas(editor):
+    """A picture with `srcset` has to swap on the canvas like any other.
+
+    The browser picks the file out of `srcset` and never reads `src` while one is there,
+    so setting the attribute alone left the OLD photo on screen with the panel reporting
+    the change — the editor's whole promise, broken by the markup every responsive site
+    writes. Asserted on `currentSrc` (what is actually painted) rather than the `src`
+    attribute, which was right the whole time.
+    """
+    photo = editor.canvas.locator(".hero-photo")
+    assert photo.get_attribute("srcset"), "the demo hero should ship responsive variants"
+    assert "/static/hero-" in _current_src(photo)  # the browser is using one of them
+
+    photo.click()
+    editor.page.wait_for_timeout(400)
+    editor.page.locator("[data-ed-media] .ed-media-url").first.fill("/static/galeria-2.svg")
+    editor.page.wait_for_timeout(400)
+
+    assert _current_src(photo).endswith("/static/galeria-2.svg")
+
+
+def test_undoing_a_responsive_photo_brings_its_variants_back(editor):
+    """Typing the original URL back is not a change, so the parked `srcset` returns."""
+    photo = editor.canvas.locator(".hero-photo")
+    before = _current_src(photo)
+
+    photo.click()
+    editor.page.wait_for_timeout(400)
+    box = editor.page.locator("[data-ed-media] .ed-media-url").first
+    box.fill("/static/galeria-2.svg")
+    editor.page.wait_for_timeout(400)
+    box.fill("/static/hero.svg")
+    editor.page.wait_for_timeout(400)
+
+    assert _current_src(photo) == before
+    assert editor.page.locator("[data-ed-pending]").inner_text() == "0"
+
+
 def test_uploading_a_file_swaps_the_picture_and_records_a_version(editor, tmp_path):
     """Click the photo → upload a real image → the field, the preview and the canvas all
     point at the stored file, and the version gallery offers the original to roll back."""
     png = tmp_path / "up.png"
-    png.write_bytes(
-        bytes.fromhex(
-            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
-            "0000000a49444154789c6360000002000100"
-        )
-    )
+    png.write_bytes(_PNG)
     photo = editor.canvas.locator(".hero-photo")
     photo.click()
     editor.page.wait_for_timeout(400)
@@ -224,6 +285,80 @@ def test_uploading_a_file_swaps_the_picture_and_records_a_version(editor, tmp_pa
     field.locator("button", has_text="Ver versiones anteriores").click()
     editor.page.wait_for_timeout(700)
     assert field.locator(".ed-media-thumb").count() >= 2  # uploaded + Original
+
+
+def test_an_image_draft_shows_in_the_preview_screen(editor, base_url, tmp_path):
+    """Change the picture, SAVE the draft, do not publish: the preview screen shows the
+    new photo while the public page still shows the old one.
+
+    The whole promise of the draft flow for media: a picture you have not published yet
+    still has to be judged somewhere, and that somewhere is the preview.
+    """
+    png = tmp_path / "draft.png"
+    png.write_bytes(_PNG)
+
+    photo = editor.canvas.locator(".hero-photo")
+    assert photo.get_attribute("src") == "/static/hero.svg"
+
+    photo.click()
+    editor.page.wait_for_timeout(400)
+    dialog = editor.page.locator("[data-ed-media]")
+    dialog.locator('input[type="file"]').set_input_files(str(png))
+    editor.page.wait_for_timeout(1000)
+    uploaded = dialog.locator(".ed-media-url").first.input_value()
+    assert "/static/sitecopy-uploads/" in uploaded
+    editor.page.locator("[data-ed-media-done]").click()
+    editor.page.wait_for_timeout(300)
+
+    # Guardar borrador, NOT Publicar.
+    editor.page.locator("[data-ed-save]").click()
+    editor.page.wait_for_timeout(1200)
+    assert "borrador guardado" in editor.status().lower()
+
+    src = _preview_attr(editor.page, base_url, "home", ".hero-photo", "src")
+    assert src == uploaded, "the preview screen is still showing the published photo"
+
+    # And the public page has not moved: this was a draft, not a publish.
+    pub = editor.page.context.new_page()
+    try:
+        pub.goto(f"{base_url}/", wait_until="networkidle")
+        assert pub.locator(".hero-photo").first.get_attribute("src") == "/static/hero.svg"
+    finally:
+        pub.close()
+
+
+def test_a_gallery_photo_draft_shows_in_the_preview_screen(editor, base_url):
+    """The same for a photo inside a collection — the list is data, so its images travel
+    through the draft flow like any other field."""
+    first = editor.canvas.locator(".galeria-grid img").first
+    assert first.get_attribute("src") == "/static/galeria-1.svg"
+
+    first.click()
+    editor.page.wait_for_timeout(400)
+    editor.page.locator("[data-ed-media] .ed-media-url").first.fill("/static/galeria-3.svg")
+    editor.page.wait_for_timeout(300)
+    assert first.get_attribute("src") == "/static/galeria-3.svg"  # live, on the canvas
+    editor.page.locator("[data-ed-media-done]").click()
+    editor.page.locator("[data-ed-save]").click()
+    editor.page.wait_for_timeout(1200)
+
+    src = _preview_attr(editor.page, base_url, "home", ".galeria-grid img", "src")
+    assert src == "/static/galeria-3.svg"
+
+
+def test_an_image_draft_survives_a_reload_of_the_canvas(editor, base_url):
+    """The saved draft is what the editor reopens on — the canvas is a preview too."""
+    photo = editor.canvas.locator(".hero-photo")
+    photo.click()
+    editor.page.wait_for_timeout(400)
+    editor.page.locator("[data-ed-media] .ed-media-url").first.fill("/static/other.svg")
+    editor.page.wait_for_timeout(300)
+    editor.page.locator("[data-ed-media-done]").click()
+    editor.page.locator("[data-ed-save]").click()
+    editor.page.wait_for_timeout(1200)
+
+    editor.open()
+    assert editor.canvas.locator(".hero-photo").get_attribute("src") == "/static/other.svg"
 
 
 def test_the_media_chip_appears_over_the_picture(editor):

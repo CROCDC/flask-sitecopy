@@ -1,220 +1,94 @@
-# Plan de testing a fondo
+# Testing
 
-Un plan orientado a **encontrar bugs**, no a perseguir un porcentaje. Está pensado para
-esta librería en concreto: sus módulos, sus zonas de riesgo reales y los huecos que hoy
-tiene la suite. Cada fase termina en una *sesión de caza*: correr lo nuevo, hacer triage,
-y por cada bug real dejar un test de regresión **antes** del fix.
+The suite is built to **find bugs**, not to chase a percentage. This is what it covers,
+how to run it, and the reasoning behind how it is put together.
 
-## Progreso
+## Running it
 
-- ✅ **Fase 0 — CI + medición.** GitHub Actions (matriz 3.10–3.13) corre pytest con
-  cobertura de ramas y umbral (`fail_under`, un ratchet que solo sube), más un job E2E que
-  instala Chromium. Extras `test`/`e2e` y config en `pyproject.toml`.
-- ✅ **Fase 1 — E2E del editor.** `tests/e2e/`: server demo en subproceso con DB temporal
-  y 13 tests de navegador sobre los flujos del editor, con aislamiento por test.
-- ✅ **Fase 2 — property-based.** `tests/test_properties.py`: split de `lines`,
-  normalización idempotente, round-trip, tokens, **fuzz del sanitizer** (Fase 3 adelantada)
-  y una **máquina de estados que exige que `MemoryStore` y `SQLAlchemyStore` no diverjan** —
-  la forma general del bug de `get()`. Cobertura de ramas 91.9% → **93.1%**.
-- ✅ **Fase 3 — seguridad ofensiva.** **CSRF cerrado**: token por sesión validado en toda
-  ruta mutante (header en el fetch del editor, campo oculto en los forms), con `test_csrf.py`
-  y validado end-to-end por la E2E (demo con CSRF encendido). Corpus de 19 payloads XSS
-  conocidos contra el sanitizer. Doble-sanitización del manifest: un valor rich sucio ya no
-  llega crudo al `innerHTML` del editor. `csrf.py` al 100%; cobertura 93.1% → **93.5%**.
-- ✅ **Fase 4 — front fino, a11y y concurrencia.** a11y con **axe-core** sobre login,
-  índice, grupo y editor — **encontró y se arregló** un bug real de contraste WCAG AA (el
-  botón "Editor visual" renderizaba ink oscuro sobre terracota, 3.2:1). Concurrencia
-  multi-worker: dos apps sobre una misma DB, el publish de una se ve en la otra al
-  siguiente request, y la caché por-request mantiene el snapshot dentro de un request.
-  `sanitizeRich` del cliente validada con un paste malicioso real (ningún handler corre en
-  el origen admin). i18n/encoding: emoji, RTL, combinantes y valores largos round-trip por
-  store, render y manifest.
-- ✅ **Fase 5 — mutation testing.** Mutación dirigida (operadores AST con libcst) sobre
-  `sanitizer`, `storage` y `resolver`. Encontró **código muerto** (`returns_to_default`,
-  calculado y nunca leído → eliminado) y ~12 huecos reales de tests, todos cerrados:
-  bypass de whitespace en `safe_href`, `url` field http-only, fuga de markup desde región
-  suprimida, `visible_text` (loss-guard), `editable_optional`, los contadores, el token
-  por-llamada, y bordes de `discard`/`delete`. Resultado: resolver **0 sobrevivientes**,
-  storage 1 (equivalente: nombre de clase del modelo), sanitizer 4 (equivalentes: bordes
-  de anidamiento malformado sin impacto). Cobertura 93.5% → **94.7%**.
-- ✅ **Fase 6 — usabilidad y cobertura.** `tests/e2e/test_ux.py`: 22 tests que miden lo
-  que una persona percibe, no el markup — operación solo con teclado, foco visible y no
-  perdido al re-renderizar, targets táctiles de 44px, cero scroll horizontal en 390px, la
-  barra que no se mueve bajo el cursor, el `font-size` computado que confirma que el paso
-  elegido es el que se ve, y el camino sin JavaScript con el script realmente bloqueado.
-  **Encontró un bug real y grave**: los campos `image`/`video` se renderizaban como
-  `<input type="url">`, y una ruta del sitio (`/static/hero.jpg` — el valor documentado)
-  falla la validación nativa del navegador, así que **la pantalla de sección entera no se
-  podía guardar desde un navegador**, con JS o sin JS. Ningún test lo veía porque todos
-  posteaban al endpoint directamente. Cobertura 94.7% → **99.1%**, umbral a 98.
-- 🎯 **Plan ejecutado.** Balance de bugs reales encontrados y corregidos: el CSRF (Fase 3),
-  el contraste WCAG (Fase 4), el código muerto (Fase 5), el formulario que el navegador se
-  negaba a enviar (Fase 6) — más ~12 huecos de tests cerrados.
-  Pendiente menor: los tests component-level de postMessage necesitan un runner JS
-  (jest/vitest); hoy el chequeo de `event.source` está cubierto por revisión de código y el
-  path de seguridad real (sanitizeRich) por la E2E.
+```bash
+pip install -e ".[test]"          # library + Flask-SQLAlchemy + pytest + hypothesis
+pytest                            # the default run: unit + integration, no browser
 
-## Estado actual
+pip install -e ".[test,e2e]"      # adds pytest-playwright + axe-core
+playwright install chromium
+pytest tests/e2e -m e2e           # the browser suite
+```
 
-Medido con `pytest --cov` y `pytest tests/e2e -m e2e`:
+The browser tests are behind a marker, and `addopts = -m "not e2e"` in `pyproject.toml`
+keeps them out of the default run — a contributor with no Chromium still gets a green
+`pytest`. The trailing `-m e2e` above overrides that default.
 
-| capa | estado | nota |
-|------|--------|------|
-| Python (unit + integración) | **99.1%** de ramas, 569 tests | umbral en 98, ratchet |
-| E2E de navegador | **53 tests** (editor, UX, a11y) | corren en CI con Chromium |
-| Usabilidad medida (no markup) | 22 tests | teclado, foco, táctil, layout, píxeles |
-| a11y (axe-core) | 9 pantallas/estados | incluye la página pública con un tamaño puesto |
-| CI (GitHub Actions) | matriz 3.10–3.13 + job E2E | en cada push |
-| Property-based / fuzzing | `hypothesis` + corpus XSS | máquina de estados cross-store |
+Coverage runs with `pytest --cov`. `fail_under` is a **ratchet**: it only ever moves up.
 
-Lo que sigue sin cubrir son 8 sentencias inalcanzables desde la API pública: un store que
-se contradice consigo mismo, un `publish` que tendría que ser a la vez un cambio real y un
-no-op, y el fallback de versión para un árbol de fuentes nunca instalado.
+## What is covered
 
-**Por qué importa el enfoque, no el número:** los dos bugs reales de la última auditoría
-no eran líneas sin cubrir, eran *clases* de bug que la cobertura por líneas no ve:
+| layer | size | what it exercises |
+|---|---|---|
+| Python unit + integration | 636 tests, **98.7%** branch coverage | resolver, storage, sanitizer, admin endpoints, registry, collections, sizes, CSRF |
+| Browser E2E — editor | 35 tests | click-to-edit, media, the draft → preview → publish → undo flow, validation |
+| Browser E2E — UX | 42 tests | what a person perceives: keyboard-only operation, focus, 44px touch targets, no horizontal scroll at 390px, computed font sizes, the no-JavaScript path |
+| Browser E2E — a11y | 14 checks | axe-core over login, index, group, editor, preview |
+| Property-based | `hypothesis` | `lines` splitting, normalization idempotence, token graphs, a cross-store state machine |
+| Security | XSS corpus + fuzzing | sanitizer on save *and* on render, `url`/media scheme guards, CSRF on every mutating route |
 
-- `lines` se partía con `str.splitlines()` en un lado y `"\n"` en otro → **input exótico**
-  (un separador Unicode pegado) rompía el render. → pide *property-based testing*.
-- `MemoryStore.get()` devolvía el objeto interno y `SQLAlchemyStore.get()` una copia →
-  **divergencia entre dos implementaciones del mismo contrato**. → pide *tests de
-  contrato cross-implementación como invariantes*.
+CI runs the default suite across Python 3.10–3.13 and the E2E job with Chromium, on every
+push.
 
-El plan prioriza justo esas dos técnicas, más la deuda de E2E del editor.
+What remains uncovered is a handful of statements unreachable from the public API: a store
+that contradicts itself, a `publish` that would have to be a real change and a no-op at
+once, and the version fallback for a source tree that was never installed.
 
----
+## Principles
 
-## Principios
+1. **A bug found is a regression test first.** The test fails, *then* the fix. Every entry
+   in the log below was found this way.
+2. **Test the contract, not the implementation.** `test_storage.py` runs every test against
+   both stores; that is the model.
+3. **Invariants over examples.** An example proves a case, a property proves a rule. Prefer
+   properties wherever the input space is large — text, tokens, HTML.
+4. **Security is tested adversarially.** A payload corpus and fuzzing, not a couple of
+   polite `<script>` tags.
+5. **Assert what a person perceives.** The markup being right is not the same as the page
+   being right — see the responsive-image bug below, where every assertion passed while the
+   screen was wrong.
 
-1. **Un bug encontrado = un test de regresión primero.** El test falla, después el fix.
-2. **Testear el contrato, no la implementación.** Lo que ya hace `test_storage.py`
-   (correr cada test sobre ambos stores) es el modelo a extender.
-3. **Invariantes por sobre ejemplos.** Un ejemplo prueba un caso; una propiedad prueba una
-   regla. Preferir propiedades donde el espacio de entrada es grande (texto, tokens, HTML).
-4. **La seguridad se testea siendo adversarial.** Corpus de payloads + fuzzing, no un par
-   de `<script>` amables.
-5. **El editor es mitad del producto y hoy no tiene red.** El JS necesita su propia suite.
+## Bugs this suite has caught
 
----
+Kept because each one names a *class* of bug worth keeping a guard against, and because
+several were invisible to line coverage.
 
-## Fases (roadmap priorizado)
+| found by | the bug |
+|---|---|
+| property-based | `lines` split with `str.splitlines()` in one place and `"\n"` in another — an exotic Unicode separator broke the render |
+| cross-store state machine | `MemoryStore.get()` returned the internal object, `SQLAlchemyStore.get()` a copy: two implementations of one contract, diverging |
+| offensive security | no CSRF on the mutating routes; now a per-session token on all of them |
+| axe-core | a real WCAG AA contrast failure — the "Editor visual" button rendered dark ink on terracotta, 3.2:1 |
+| mutation testing | dead code (`returns_to_default`, computed and never read) plus ~12 real test gaps, including a whitespace bypass in `safe_href` |
+| UX suite | `image`/`video` fields rendered as `<input type="url">`, so a site path (`/static/hero.jpg` — the documented value) failed the browser's native validation and **the whole section screen could not be saved from a browser**. Every test passed: they all posted to the endpoint directly |
+| E2E, asserting `currentSrc` | a picture with a `srcset` never changed on the canvas — the browser paints a variant and never reads `src`, so setting the attribute did nothing visible while the panel reported the edit. See the [integration guide](INTEGRATION.md#responsive-images-need-a-guard) |
 
-Orden por relación valor/esfuerzo. Cada casilla es una unidad de trabajo entregable.
+The last two are the same lesson twice: a test that drives the API instead of the browser,
+or reads an attribute instead of what was painted, will confirm a page that is broken.
 
-### Fase 0 — Red de seguridad: CI + medición  ·  *rápido, desbloquea todo*
+## Risk map
 
-- [ ] `.github/workflows/ci.yml`: matriz Python 3.10–3.13, corre `pytest` en cada push/PR.
-- [ ] Job de cobertura con umbral que falla por debajo de la línea de base (`--cov-fail-under=93`).
-- [ ] Instalar Playwright + Chromium en el runner para habilitar la Fase 1 en CI.
-- [ ] Reporte de cobertura visible (artifact o summary) para ver regresiones de un vistazo.
+Where to aim a new test, by module.
 
-### Fase 1 — E2E del editor (Playwright)  ·  *la deuda más grande*
+| module | what can go wrong |
+|---|---|
+| `resolver` / tokens | interpolation order, tokens referencing each other, cycles, `{year}`, unknown token left literal, per-call tokens, stray braces, escape-before-sanitize |
+| `lines` | Unicode separators, CRLF, edge whitespace, empty middle lines, `#n` index mapping |
+| `sanitizer` / `rich` | XSS corpus, unclosed tags eating text, idempotence, silent loss of visible text, unsafe `href`, entities, deep nesting |
+| `url` / `image` / `video` | schemes, `//`, `\`, control chars, unicode look-alikes, fallback to the default on render |
+| draft / publish / preview | the full state machine, session gating, `?preview=0/false/off`, `previous_value` round trip |
+| publish scope | a colleague's draft must not ride along, key dedup, keys that no longer exist |
+| `storage` | `ensure_schema` idempotence, column migration, `table_name`, unicode keys, length limits, both stores identical |
+| admin endpoints | auth on every route, CSRF, content type, huge payloads, malformed JSON, keys outside the registry |
+| editor shell (JS) | pending count, undo, the flush race, double-click, `beforeunload`, device switch, panel tabs and search |
+| editor frame (JS) | click mapping, passthrough on interactive elements, navigation, token dependents, sanitized paste, focus trap, **parked responsive sources** |
 
-Convertir la exploración manual de la auditoría en una suite estable y versionada. Un
-`conftest` que levanta la app demo en un puerto efímero con DB temporal, y `pytest-playwright`.
+## Known gap
 
-- [ ] **Infra:** fixture que arranca `example.app` (DB temporal) + `page`/`canvas` helpers.
-- [ ] Click-to-edit: encabezado, botón, párrafo; el panel y el canvas quedan sincronizados.
-- [ ] Campo token (`global.brand`): editar re-renderiza dependientes en vivo (footer, `{brand}`).
-- [ ] Campo `lines`: editar una línea deja intactas las demás; vaciar una no borra la siguiente.
-- [ ] Campo `rich` de bloque: click abre el *sheet*; negrita/link/listas; contador visible.
-- [ ] `Escape` cancela sin dejar pendiente; `Enter` en `line` cierra y avisa.
-- [ ] Flujo completo: **guardar → previsualizar → publicar → deshacer → descartar**, verificando
-      el sitio público en una pestaña aparte en cada paso.
-- [ ] Validación: vaciar un requerido y publicar → bloquea, nombra el campo, marca inválido.
-- [ ] `max_length`: contador en rojo y publicación bloqueada.
-- [ ] Contenido externo (`external_content`): click en la ficha muestra "sale del catálogo".
-- [ ] Copia invisible: click en la imagen abre el alt en el panel; `<title>`/meta en el panel.
-- [ ] Navegación dentro del canvas mantiene el editor vivo y los pendientes.
-- [ ] Selector de dispositivo (Celular/Tablet/Escritorio/Auto) sin romper layout.
-- [ ] Tarjetas de compartir (Google/WhatsApp/Twitter) se arman del `<title>`/meta del documento.
-- [ ] Accesibilidad por teclado: Tab a un `ct-t`, Enter edita, foco atrapado en el sheet.
-- [ ] `beforeunload` avisa con cambios sin guardar.
-- [ ] **Cero errores de consola** durante toda la corrida (aserto global).
-
-### Fase 2 — Property-based (Hypothesis)  ·  *donde se esconden los bugs de datos*
-
-- [ ] **`lines`**: para todo texto, `t_lines(store(x))` coincide con partir por `"\n"` como
-      lo hace el editor JS; ningún separador Unicode produce viñetas de más. *(regresión del bug)*
-- [ ] **Idempotencia de normalización**: `_normalize(_normalize(x)) == _normalize(x)`.
-- [ ] **Round-trip de resolución**: `t(publish(x)) == esperado` para cualquier `x`, incluyendo
-      emoji, combinantes, RTL, control chars, valores larguísimos.
-- [ ] **Tokens**: para cualquier grafo de tokens declarado, la interpolación termina (no cuelga
-      con referencias mutuas), respeta el orden, y un token desconocido queda literal.
-- [ ] **Máquina de estados draft/publish** (`hypothesis.stateful`): secuencias arbitrarias de
-      `set_draft/publish/revert/discard` mantienen los invariantes: el público nunca ve un
-      draft; `previous_value` siempre permite volver un paso; "restaurar original" = borrar fila.
-- [ ] **Contrato cross-store como propiedad**: la misma secuencia sobre `MemoryStore` y
-      `SQLAlchemyStore` produce estados observables idénticos (`as_map`, `get`, `draft_keys`,
-      `previous_map`). *(generaliza la regresión de `get()`)*
-
-### Fase 3 — Seguridad ofensiva
-
-- [ ] **Corpus XSS** para `rich`: payloads conocidos (OWASP, `cure53/DOMPurify` fixtures) —
-      cada uno debe salir inerte tras sanitizar en save **y** en render.
-- [ ] **Fuzz del sanitizer** (Hypothesis con HTML generado): nunca produce `<script>`,
-      manejadores `on*`, `javascript:`, ni pierde texto visible sin avisar; es idempotente.
-- [ ] **`url`**: esquemas raros, `//`, `\`, control chars, unicode look-alikes → cae al default.
-- [ ] **Doble sanitización**: un valor sucio inyectado directo en la DB (backup/UPDATE manual)
-      no llega crudo ni al público ni al `innerHTML` del editor (cerrar el hueco del manifest).
-- [ ] **CSRF** *(hallazgo abierto de la auditoría)*: test que un form POST cross-site a
-      `/discard`, `/publish` y el POST de grupo **no** muta estado; fijar la defensa elegida
-      (token o `SameSite`) y testearla.
-- [ ] **Auth**: cada ruta mutante exige sesión; una sesión vencida responde 401/JSON a un fetch.
-- [ ] **Markers**: un valor con codepoints privados (``) guardado no puede forjar un
-      segundo `<ct-t>` ni filtrar tofu al público.
-
-### Fase 4 — Front-end fino, a11y y concurrencia
-
-- [ ] **postMessage** (component-level, jsdom o Playwright): origen y `source` validados en
-      ambos lados; un frame hermano no puede manejar `set`/`openRich`. *(regresión del hallazgo)*
-- [ ] **`sanitizeRich`/`safeHref` del cliente**: mismo corpus XSS que el server, en el origen admin.
-- [ ] **Race del `flush`**: click en Guardar mientras se tipea no pierde el último caracter ni
-      duplica el publish (doble-click).
-- [ ] **a11y con axe-core**: login, índice, grupo, editor y preview sin violaciones serias;
-      foco atrapado en el sheet; roles de tabs y roving tabindex.
-- [ ] **Concurrencia multi-worker**: dos "procesos" (dos app contexts) comparten una DB; un
-      publish en uno se ve en el otro en el request siguiente (la caché es por-request, no de proceso).
-- [ ] **i18n/encoding**: emoji, RTL, combinantes y valores muy largos renderizan y editan sin romper.
-
-### Fase 5 — Calidad de los tests
-
-- [ ] **Mutation testing** (`mutmut` sobre `sanitizer.py`, `resolver.py`, `storage.py`):
-      medir si los tests realmente matan mutantes; subir el score donde sobrevivan.
-- [ ] Revisar ramas sin cubrir que quedan: `admin.py` 240-244/471-477, `sanitizer.py` 143-145/
-      168/172-174, `editor_markup.py` 257-258 — decidir caso por caso si son test o código muerto.
-
----
-
-## Matriz de riesgo por módulo
-
-Referencia rápida de *qué puede salir mal* en cada zona, para dirigir el diseño de tests.
-
-| módulo | escenarios adversariales que hay que cubrir |
-|--------|---------------------------------------------|
-| `resolver` / tokens | orden de interpolación, tokens que se referencian entre sí, ciclos, `{year}`, token desconocido literal, per-call tokens, llaves sueltas, escape-antes-de-sanitizar |
-| `lines` | separadores Unicode, CRLF, blancos al borde, líneas vacías intermedias, mapeo de índice `#n`, edición concurrente de dos líneas |
-| `sanitizer` / `rich` | corpus XSS, tags sin cerrar que se comen texto, idempotencia, pérdida de texto visible, `href` inseguro, entidades, mojibake, anidamiento profundo |
-| `url` | esquemas, `//`/`\`, control chars, unicode, fallback al default en render |
-| draft/publish/preview | máquina de estados completa, gating por sesión, `?preview=0/false/off`, `previous_value` ida y vuelta |
-| publish scope | draft de un colega no viaja, dedup de keys, `IN()` grande, keys que no existen |
-| `storage` | `ensure_schema` idempotente, migración de columna, `table_name`, keys unicode, límites de largo, ambos stores idénticos |
-| endpoints admin | auth en cada ruta, **CSRF**, content-type, payload gigante, JSON malformado, más keys que el registry |
-| editor shell (JS) | `pending`, undo, race del flush, doble-click, `beforeunload`, ajuste de dispositivo, tabs/búsqueda del panel, tarjetas |
-| editor-frame (JS) | mapeo del click, lone-editable en heading centrado, passthrough de elementos interactivos, navegación, dependientes de token, paste sanitizado, focus-trap del sheet |
-
----
-
-## Definición de "a fondo" (criterios de salida)
-
-- CI verde en cada push, en toda la matriz de Python.
-- Cobertura Python **≥ 97%**, y **100%** en las ramas de `sanitizer`, resolución y publish.
-- E2E cubre los flujos de la Fase 1 y corre en CI sin errores de consola.
-- Corpus de seguridad con **0 escapes** en server y cliente.
-- Mutation score objetivo **≥ 85%** en los tres módulos núcleo.
-- Cada bug encontrado durante la ejecución del plan queda con su test de regresión.
-
-## Herramientas a incorporar
-
-`pytest-cov` · `pytest-playwright` · `hypothesis` · `axe-core` (vía Playwright) · `mutmut`
-· GitHub Actions. Todas como extras de desarrollo, sin tocar las dependencias de runtime.
+Component-level tests for `postMessage` need a JS runner (jest/vitest), which the project
+does not carry. Today the `event.source`/origin checks are covered by code review, and the
+security-critical path (`sanitizeRich` in the admin origin) by the E2E suite.
