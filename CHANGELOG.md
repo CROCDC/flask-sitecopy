@@ -4,6 +4,41 @@ All notable changes to **flask-sitecopy** are documented here. The format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [0.9.0] — 2026-09-07
+
+### Fixed
+
+- **A responsive photo now actually changes on the canvas.** A site that ships
+  `srcset` on its `<img>` — or `<source>`s inside a `<picture>` — had the editor
+  swap a picture and nothing happen on screen: the browser picks the file out of
+  those sources and never reads `src`, so the canvas went on painting the old
+  photo while the panel reported the change. Those sources describe the picture
+  that *was* there (narrow copies of it, generated ahead of time), so the editor
+  now parks them while the field points somewhere else, and hands them back if
+  the edit is undone.
+
+  Only the live canvas was affected — a saved draft always previewed and
+  published correctly. Nothing to change in your templates.
+
+  A site that renders its own responsive variants should still drop them when the
+  photo is overridden, or the published page has the same problem for real. The
+  demo shows the guard (`example/app.py`, `is_stock_photo`), and the README and the
+  integration guide both spell it out.
+
+### Documentation
+
+- **New [integration guide](docs/INTEGRATION.md)** — how to move a site that already
+  exists onto the library: the order to do it in, where copy hides, the guard every
+  responsive image needs, `files=` vs `media_store=`, where uploads actually survive a
+  redeploy, and a troubleshooting list headed by "I changed something and I do not see
+  it".
+- The options table in the README was missing `files`, `media_store` and
+  `upload_max_bytes` — the three that decide what happens to an upload. Passing a
+  `FileStore` as `media_store=` is a miswiring that boots fine and breaks later; both
+  the table and the uploads section now say so.
+- `docs/TESTING.md` is now a description of what the suite covers and how to run it,
+  in English and with current numbers, instead of a roadmap that had been fully executed.
+
 ## [0.8.0] — 2026-09-03
 
 ### Added
@@ -314,6 +349,7 @@ Earlier release — see the [git history](https://github.com/CROCDC/flask-siteco
 
 First tagged release.
 
+[0.9.0]: https://github.com/CROCDC/flask-sitecopy/releases/tag/v0.9.0
 [0.8.0]: https://github.com/CROCDC/flask-sitecopy/releases/tag/v0.8.0
 [0.7.0]: https://github.com/CROCDC/flask-sitecopy/releases/tag/v0.7.0
 [0.6.0]: https://github.com/CROCDC/flask-sitecopy/releases/tag/v0.6.0
