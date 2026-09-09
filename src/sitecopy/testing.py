@@ -89,7 +89,11 @@ def check_registry(registry: Registry) -> list[str]:
         if not field.label.strip():
             problems.append(f"{key}: no label")
         if not field.default.strip():
-            problems.append(f"{key}: empty default (a blank string is not editable copy)")
+            if not field.optional:
+                problems.append(f"{key}: empty default (a blank string is not editable copy)")
+            # An optional field's empty default is the documented "nothing here" and the
+            # checks below all read the shape of a value that is present.
+            continue
         if field.max_length < len(field.default):
             problems.append(
                 f"{key}: the default ({len(field.default)} chars) does not fit its own "

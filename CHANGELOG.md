@@ -4,6 +4,29 @@ All notable changes to **flask-sitecopy** are documented here. The format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [0.10.0] — 2026-09-09
+
+### Added
+
+- **`optional=True`: a field that may be left empty.** Every field refuses a blank —
+  on save, and as a default in `check_registry` — because a blank heading or meta
+  description is almost always a slip. A collection made that rule bite: it has one
+  shape for every item, so a value only some items carry (a clip beside its poster, a
+  link under a caption) had no way to be declared. `TextField(..., optional=True)` and
+  `ItemField(..., optional=True)` allow an empty default and an empty value, and an
+  empty optional value renders as exactly `""` — in edit mode too, with no editor
+  marker — so `{% if item.video %}` branches the same way on the canvas as on the
+  public page. The value is edited from the panel, which lists it either way. The
+  editor manifest carries the flag as `optional`.
+
+  Not to be confused with `t_optional`, which is about a *key* that may not exist;
+  this is about a *value* that may be blank.
+
+### Notes for upgraders
+
+- Fully backwards-compatible: the flag defaults to off, and a registry that never sets
+  it is checked, saved and rendered exactly as before. No migration.
+
 ## [0.9.0] — 2026-09-07
 
 ### Fixed
