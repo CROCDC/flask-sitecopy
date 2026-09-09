@@ -82,6 +82,13 @@ class TextField:
     # host turned sizes on at all (`text_sizes=`); `False` keeps one field out of it —
     # a legal disclaimer that has to stay the size the lawyer approved, say.
     resizable: bool = True
+    # Whether the editor may leave this field EMPTY. Off by default: a blank heading, a
+    # blank meta description or a blank list is almost always a mistake, so the admin
+    # refuses an empty value and `check_registry` refuses an empty default. On, an empty
+    # value is a legitimate answer — "this item has no video", "no second line" — and
+    # the template branches on it (`{% if item.video %}`). What it is NOT: a way to
+    # declare a key that may be absent from the registry; that is `t_optional`.
+    optional: bool = False
 
     def __post_init__(self) -> None:
         if self.type not in DEFAULT_MAX_LENGTH:
@@ -123,6 +130,10 @@ class ItemField:
     hint: str = ""
     max_length: int = 0
     resizable: bool = True
+    # See `TextField.optional`. The natural use is here: a collection has ONE shape for
+    # every item, so a value only some items carry (a clip next to its poster, a link
+    # under a caption) has to be allowed to stay empty on the ones that do not.
+    optional: bool = False
 
     def __post_init__(self) -> None:
         if "." in self.name:
@@ -219,6 +230,7 @@ class Collection:
             hint=spec.hint,
             max_length=spec.max_length,
             resizable=spec.resizable,
+            optional=spec.optional,
         )
 
     def declared_fields(self) -> list[TextField]:
