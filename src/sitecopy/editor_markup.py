@@ -310,6 +310,7 @@ def field_payload(key: str) -> dict[str, Any]:
         "section": section,
         "hasDraft": state["has_draft"],
         "isOverridden": state["is_overridden"],
+        "optional": field.optional,
         **_size_payload(key, field),
     }
 

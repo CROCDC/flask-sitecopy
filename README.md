@@ -328,6 +328,28 @@ is always offered as *“Original”*). History rides the same `db` as the copy;
 
 ---
 
+### Leaving a field empty
+
+Every field refuses an empty value, on save and in `check_registry`: a blank heading or
+a blank meta description is almost always a slip, and one click would ship it. Where a
+blank is a real answer — this item has no clip, this card has no link — say so:
+
+```python
+ItemField("video", "Video", type="video", default="", optional=True)
+```
+
+```jinja
+{% if item.video %}<video src="{{ item.video }}" poster="{{ item.src }}"></video>
+{% else %}<img src="{{ item.src }}">{% endif %}
+```
+
+An `optional` field may ship an empty default, may be saved empty, and renders as
+exactly `""` — in edit mode too, with no editor marker, so the template's branch is the
+same one the public sees. It is edited from the panel, which lists it whether it holds
+anything or not. `TextField` takes the same flag. This is not `t_optional`, which is
+about a *key* that may not exist in the registry; `optional=True` is about a *value*
+that may be blank.
+
 ## Collections
 
 Every field above is one row for one string, at a count the code fixes. A **collection**

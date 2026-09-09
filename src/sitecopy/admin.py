@@ -225,9 +225,11 @@ def _validate(field: TextField, value: str) -> str | None:
     if len(value) > field.max_length:
         return f"{_name(field)}: máximo {field.max_length} caracteres (escribiste {len(value)})."
     if not value:
-        # Every type. A blank `text` ships an empty <h1> and an empty meta description;
-        # a blank `lines` empties whatever list it feeds — all in one click.
-        return f"{_name(field)}: no puede quedar vacío."
+        # Every type, unless the field opted in. A blank `text` ships an empty <h1> and
+        # an empty meta description; a blank `lines` empties whatever list it feeds —
+        # all in one click. An `optional` field is the one whose template branches on
+        # the blank ("no video on this item"), so there it is an answer, not a slip.
+        return None if field.optional else f"{_name(field)}: no puede quedar vacío."
     token_error = _token_error(field, value)
     if token_error:
         return token_error

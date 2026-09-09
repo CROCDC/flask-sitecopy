@@ -285,10 +285,14 @@ def t(key: str, **params: Any) -> str | Markup:
         escaped = {name: str(escape(token)) for name, token in tokens.items()}
         return Markup(sanitize(_interpolate(effective(key), escaped)))
     value = _interpolate(effective(key), tokens)
-    if field.type == "url":
-        return _safe_url(value, key)
-    if field.type in ("image", "video"):
-        return _safe_media(value, key)
+    if field.type in ("url", "image", "video"):
+        # The guards below fall back to the registry default for anything they will
+        # not put in an attribute, and "nothing" is one of those things — except on a
+        # field that declared the blank an answer, where it has to stay blank or the
+        # template could never take the other branch.
+        if not value and field.optional:
+            return ""
+        return _safe_url(value, key) if field.type == "url" else _safe_media(value, key)
     return value
 
 
@@ -602,11 +606,22 @@ def _needs_marker(key: str) -> bool:
 
 
 def editable(key: str, **params: Any) -> str | Markup:
-    """`t()` for templates: identical output, plus the editor tag in edit mode."""
+    """`t()` for templates: identical output, plus the editor tag in edit mode.
+
+    An `optional` field that is empty stays empty here too, with no marker: the
+    template's `{% if item.video %}` has to be false in edit mode exactly as on the
+    public page, or the editor would render a branch the site never shows. The value
+    is edited from the panel, which lists it whether it is empty or not.
+    """
     value = t(key, **params)
-    if not _needs_marker(key):
+    if not _needs_marker(key) or (not value and _is_optional(key)):
         return value
     return _wrap(key, value)
+
+
+def _is_optional(key: str) -> bool:
+    field = current_registry().field_for(key)
+    return field is not None and field.optional
 
 
 def editable_optional(key: str, **params: Any) -> str | Markup | None:
